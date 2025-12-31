@@ -6,7 +6,7 @@ import AppKit
 struct GitStatXApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var dataController = DataController()
-    
+
     var body: some Scene {
         WindowGroup {
             MainWindowView()
@@ -16,10 +16,6 @@ struct GitStatXApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
-
-        Settings {
-            SettingsView()
-        }
     }
 }
 
