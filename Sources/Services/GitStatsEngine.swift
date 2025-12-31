@@ -6,16 +6,13 @@ class GitStatsEngine {
     let repository: GitRepository
     let context: ModelContext
 
-    // 增量处理缓存
-    private var existingTotalCommits: Int = 0
-    private var existingTotalLinesAdded: Int = 0
-    private var existingTotalLinesRemoved: Int = 0
-    private var existingCurrentLoc: Int = 0
-    private var existingFileSet: Set<String> = []
-    private var existingFilesByDate: [String: Int] = [:]
-    private var existingLocByDate: [String: Int] = [:]
-    private var existingAuthorStats: [String: (name: String, email: String, commits: Int, added: Int, removed: Int, firstDate: Date?, lastDate: Date?)] = [:]
-    private var existingFileStats: [String: (commits: Int, added: Int, removed: Int)] = [:]
+    private typealias AuthorAgg = (name: String, email: String, commits: Int, added: Int, removed: Int, firstDate: Date?, lastDate: Date?)
+    private typealias FileAgg = (commits: Int, added: Int, removed: Int)
+
+    private var statsCache: StatsCache?
+    private var cacheURL: URL {
+        URL(fileURLWithPath: project.statsPath).appendingPathComponent("stats_cache.json")
+    }
 
     struct ProgressUpdate {
         enum Stage {
@@ -55,12 +52,15 @@ class GitStatsEngine {
             try? context.save()
         }
 
+        statsCache = forceFullRebuild ? nil : loadStatsCache()
+        let lastCachedCommit = statsCache?.lastCommit ?? project.lastGeneratedCommit
         // 判断是否需要增量处理
         let isIncremental = !forceFullRebuild &&
-                           project.lastGeneratedCommit != nil &&
-                           project.statsExists
+                           lastCachedCommit != nil &&
+                           project.statsExists &&
+                           statsCache != nil
 
-        let sinceCommit: String? = isIncremental ? project.lastGeneratedCommit : nil
+        let sinceCommit: String? = isIncremental ? lastCachedCommit : nil
 
         let totalStart = Date()
         print("📊 Fetching commits\(isIncremental ? " (incremental since \(sinceCommit!))" : "")...")
@@ -98,9 +98,8 @@ class GitStatsEngine {
         }
 
         let initDataStart = Date()
-        // 如果是增量处理，加载现有数据
-        var authorStats: [String: (name: String, email: String, commits: Int, added: Int, removed: Int, firstDate: Date?, lastDate: Date?)] = [:]
-        var fileStats: [String: (commits: Int, added: Int, removed: Int)] = [:]
+        var authorStats: [String: AuthorAgg] = [:]
+        var fileStats: [String: FileAgg] = [:]
         var fileSet = Set<String>()
         var currentLoc = 0
         var filesByDate: [String: Int] = [:]
@@ -109,127 +108,199 @@ class GitStatsEngine {
         var totalLinesAdded = 0
         var totalLinesRemoved = 0
 
-        if isIncremental {
-            await loadExistingStats()
-            totalCommits = existingTotalCommits
-            totalLinesAdded = existingTotalLinesAdded
-            totalLinesRemoved = existingTotalLinesRemoved
-            currentLoc = existingCurrentLoc
-            fileSet = existingFileSet
-            filesByDate = existingFilesByDate
-            locByDate = existingLocByDate
-            authorStats = existingAuthorStats
-            fileStats = existingFileStats
-        } else {
-            await clearExistingDataOnMain()
+        if let cache = statsCache {
+            totalCommits = cache.totalCommits
+            totalLinesAdded = cache.totalLinesAdded
+            totalLinesRemoved = cache.totalLinesRemoved
+            currentLoc = cache.currentLoc
+            fileSet = Set(cache.fileSet)
+            filesByDate = cache.filesByDate
+            locByDate = cache.locByDate
+            authorStats = cache.authorStats.mapValues {
+                (name: $0.name, email: $0.email, commits: $0.commits, added: $0.added, removed: $0.removed, firstDate: $0.firstDate, lastDate: $0.lastDate)
+            }
+            fileStats = cache.fileStats.mapValues { (commits: $0.commits, added: $0.added, removed: $0.removed) }
         }
         let initDataDuration = Date().timeIntervalSince(initDataStart)
 
-        let isoDayFormatter: ISO8601DateFormatter = {
+        print("📈 Aggregating results...")
+        let aggregateStart = Date()
+        struct PartialAggregate {
+            var totalCommits: Int = 0
+            var totalAdded: Int = 0
+            var totalRemoved: Int = 0
+            var authorStats: [String: AuthorAgg] = [:]
+            var fileStats: [String: FileAgg] = [:]
+            var dailyNetLoc: [String: Int] = [:]
+            var firstSeenDayForFile: [String: String] = [:]
+        }
+
+        let workerCount = max(1, min(ProcessInfo.processInfo.activeProcessorCount * 2, parsedCommits.count))
+        let chunkSize = (parsedCommits.count + workerCount - 1) / workerCount
+        var partials = Array(repeating: PartialAggregate(), count: workerCount)
+
+        DispatchQueue.concurrentPerform(iterations: workerCount) { worker in
+            let start = worker * chunkSize
+            let end = min(start + chunkSize, parsedCommits.count)
+            guard start < end else { return }
+
+            var partial = PartialAggregate()
+            let calendar = Calendar(identifier: .gregorian)
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withFullDate]
-            return formatter
-        }()
 
-        var commitModels: [Commit] = []
+            for index in start..<end {
+                let entry = parsedCommits[index]
+                partial.totalCommits += 1
+                let commit = entry.commit
+                let dayKey = formatter.string(from: calendar.startOfDay(for: commit.authorDate))
 
-        print("📈 Aggregating results...")
-        var activeDays: Set<Date> = []
-        let aggregateStart = Date()
-        for (processedIndex, entry) in parsedCommits.enumerated() {
-            totalCommits += 1
-            let commit = entry.commit
-            let day = Calendar.current.startOfDay(for: commit.authorDate)
-            activeDays.insert(day)
-            let dayKey = isoDayFormatter.string(from: day)
+                let authorKey = "\(commit.authorName) <\(commit.authorEmail)>"
+                if partial.authorStats[authorKey] == nil {
+                    partial.authorStats[authorKey] = (commit.authorName, commit.authorEmail, 0, 0, 0, commit.authorDate, commit.authorDate)
+                }
 
-            let authorKey = "\(commit.authorName) <\(commit.authorEmail)>"
-            if authorStats[authorKey] == nil {
-                authorStats[authorKey] = (commit.authorName, commit.authorEmail, 0, 0, 0, commit.authorDate, commit.authorDate)
+                var stats = partial.authorStats[authorKey]!
+                let commitAdded = entry.numstats.reduce(0) { $0 + $1.added }
+                let commitRemoved = entry.numstats.reduce(0) { $0 + $1.removed }
+                stats.commits += 1
+                stats.added += commitAdded
+                stats.removed += commitRemoved
+                stats.firstDate = stats.firstDate.map { min($0, commit.authorDate) } ?? commit.authorDate
+                stats.lastDate = stats.lastDate.map { max($0, commit.authorDate) } ?? commit.authorDate
+                partial.authorStats[authorKey] = stats
+
+                partial.totalAdded += commitAdded
+                partial.totalRemoved += commitRemoved
+                partial.dailyNetLoc[dayKey, default: 0] += commitAdded - commitRemoved
+
+                for numstat in entry.numstats {
+                    var fstats = partial.fileStats[numstat.path] ?? (0, 0, 0)
+                    fstats.commits += 1
+                    fstats.added += numstat.added
+                    fstats.removed += numstat.removed
+                    partial.fileStats[numstat.path] = fstats
+
+                    if partial.firstSeenDayForFile[numstat.path] == nil {
+                        partial.firstSeenDayForFile[numstat.path] = dayKey
+                    } else if let existingDay = partial.firstSeenDayForFile[numstat.path], dayKey < existingDay {
+                        partial.firstSeenDayForFile[numstat.path] = dayKey
+                    }
+                }
             }
 
-            var stats = authorStats[authorKey]!
-            stats.commits += 1
-            stats.firstDate = stats.firstDate.map { min($0, commit.authorDate) } ?? commit.authorDate
-            stats.lastDate = stats.lastDate.map { max($0, commit.authorDate) } ?? commit.authorDate
-            let commitAdded = entry.numstats.reduce(0) { $0 + $1.added }
-            let commitRemoved = entry.numstats.reduce(0) { $0 + $1.removed }
-            stats.added += commitAdded
-            stats.removed += commitRemoved
-            authorStats[authorKey] = stats
+            partials[worker] = partial
+        }
 
-            totalLinesAdded += commitAdded
-            totalLinesRemoved += commitRemoved
+        func minDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
+            switch (lhs, rhs) {
+            case let (l?, r?):
+                return min(l, r)
+            case (nil, let r?):
+                return r
+            case (let l?, nil):
+                return l
+            default:
+                return nil
+            }
+        }
 
-            for numstat in entry.numstats {
-                fileSet.insert(numstat.path)
-                currentLoc = max(0, currentLoc + numstat.added - numstat.removed)
+        func maxDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
+            switch (lhs, rhs) {
+            case let (l?, r?):
+                return max(l, r)
+            case (nil, let r?):
+                return r
+            case (let l?, nil):
+                return l
+            default:
+                return nil
+            }
+        }
 
-                var fstats = fileStats[numstat.path] ?? (0, 0, 0)
-                fstats.commits += 1
-                fstats.added += numstat.added
-                fstats.removed += numstat.removed
-                fileStats[numstat.path] = fstats
+        var dailyNetLoc: [String: Int] = [:]
+        var firstSeenDayForFile: [String: String] = [:]
+
+        for partial in partials {
+            totalCommits += partial.totalCommits
+            totalLinesAdded += partial.totalAdded
+            totalLinesRemoved += partial.totalRemoved
+
+            for (key, stats) in partial.authorStats {
+                if let existing = authorStats[key] {
+                    authorStats[key] = (
+                        name: existing.name,
+                        email: existing.email,
+                        commits: existing.commits + stats.commits,
+                        added: existing.added + stats.added,
+                        removed: existing.removed + stats.removed,
+                        firstDate: minDate(existing.firstDate, stats.firstDate),
+                        lastDate: maxDate(existing.lastDate, stats.lastDate)
+                    )
+                } else {
+                    authorStats[key] = stats
+                }
             }
 
-            filesByDate[dayKey] = fileSet.count
-            locByDate[dayKey] = currentLoc
+            for (path, stats) in partial.fileStats {
+                if let existing = fileStats[path] {
+                    fileStats[path] = (
+                        commits: existing.commits + stats.commits,
+                        added: existing.added + stats.added,
+                        removed: existing.removed + stats.removed
+                    )
+                } else {
+                    fileStats[path] = stats
+                }
+            }
 
-            let commitModel = Commit(
-                commitHash: commit.hash,
-                authorName: commit.authorName,
-                authorEmail: commit.authorEmail,
-                authorDate: commit.authorDate,
-                committerName: commit.committerName,
-                committerEmail: commit.committerEmail,
-                committerDate: commit.committerDate,
-                message: commit.message,
-                linesAdded: commitAdded,
-                linesRemoved: commitRemoved,
-                filesChanged: entry.numstats.count
-            )
-            commitModel.project = project
-            commitModels.append(commitModel)
+            for (day, delta) in partial.dailyNetLoc {
+                dailyNetLoc[day, default: 0] += delta
+            }
 
-            if processedIndex % 50 == 0 || processedIndex + 1 == parsedCommits.count {
-                progress?(ProgressUpdate(stage: .processing, processed: processedIndex + 1, total: parsedCommits.count))
-                Task { @MainActor in
-                    self.project.progressStage = "processing"
-                    self.project.progressProcessed = processedIndex + 1
-                    self.project.progressTotal = parsedCommits.count
+            for (path, day) in partial.firstSeenDayForFile {
+                if fileSet.contains(path) {
+                    continue
+                }
+                if let existingDay = firstSeenDayForFile[path] {
+                    if day < existingDay {
+                        firstSeenDayForFile[path] = day
+                    }
+                } else {
+                    firstSeenDayForFile[path] = day
                 }
             }
         }
+
+        if !dailyNetLoc.isEmpty {
+            let sortedDays = dailyNetLoc.keys.sorted()
+            for day in sortedDays {
+                currentLoc = max(0, currentLoc + dailyNetLoc[day]!)
+                locByDate[day] = currentLoc
+            }
+        }
+
+        if !firstSeenDayForFile.isEmpty {
+            var currentFileCount = fileSet.count
+            var newFilesByDay: [String: Int] = [:]
+            for (_, day) in firstSeenDayForFile {
+                newFilesByDay[day, default: 0] += 1
+            }
+
+            for day in newFilesByDay.keys.sorted() {
+                currentFileCount += newFilesByDay[day] ?? 0
+                filesByDate[day] = currentFileCount
+            }
+            fileSet.formUnion(firstSeenDayForFile.keys)
+        }
+
+        progress?(ProgressUpdate(stage: .processing, processed: parsedCommits.count, total: parsedCommits.count))
+        Task { @MainActor in
+            self.project.progressStage = "done"
+            self.project.progressProcessed = parsedCommits.count
+            self.project.progressTotal = parsedCommits.count
+        }
         let aggregateDuration = Date().timeIntervalSince(aggregateStart)
-
-        var authorModels: [Author] = []
-        for (_, stats) in authorStats {
-            let author = Author(name: stats.name, email: stats.email, commitsCount: stats.commits, linesAdded: stats.added, linesRemoved: stats.removed)
-            author.firstCommitDate = stats.firstDate
-            author.lastCommitDate = stats.lastDate
-            author.project = project
-            authorModels.append(author)
-        }
-
-        var fileModels: [File] = []
-        for (path, stats) in fileStats {
-            let file = File(path: path, commitsCount: stats.commits, linesAdded: stats.added, linesRemoved: stats.removed)
-            file.project = project
-            fileModels.append(file)
-        }
-
-        let saveStart = Date()
-        let commitsToInsert = commitModels
-        let authorsToInsert = authorModels
-        let filesToInsert = fileModels
-
-        await insertResults(commits: commitsToInsert, authors: authorsToInsert, files: filesToInsert)
-        await MainActor.run {
-            project.progressStage = "done"
-            project.progressProcessed = parsedCommits.count
-            project.progressTotal = parsedCommits.count
-        }
-        let saveDuration = Date().timeIntervalSince(saveStart)
 
         let snapshotStart = Date()
         let snapshot: SnapshotStats?
@@ -245,7 +316,6 @@ class GitStatsEngine {
         }
         let snapshotDuration = Date().timeIntervalSince(snapshotStart)
 
-        // 获取所有提交用于报表生成（不再重复解析 numstat，降低处理时间）
         let allCommitsStart = Date()
         let commits = repository.getAllCommits()
         let allCommitsDuration = Date().timeIntervalSince(allCommitsStart)
@@ -266,7 +336,31 @@ class GitStatsEngine {
         let totalDuration = Date().timeIntervalSince(totalStart)
 
         func fmt(_ t: TimeInterval) -> String { String(format: "%.3fs", t) }
-        print("⏱ Timing => fetch: \(fmt(fetchDuration)), init: \(fmt(initDataDuration)), aggregate: \(fmt(aggregateDuration)), save: \(fmt(saveDuration)), snapshot: \(fmt(snapshotDuration)), getAll: \(fmt(allCommitsDuration)), report: \(fmt(reportDuration)), total: \(fmt(totalDuration))")
+        print("⏱ Timing => fetch: \(fmt(fetchDuration)), init: \(fmt(initDataDuration)), aggregate: \(fmt(aggregateDuration)), snapshot: \(fmt(snapshotDuration)), getAll: \(fmt(allCommitsDuration)), report: \(fmt(reportDuration)), total: \(fmt(totalDuration))")
+
+        let cacheToSave = StatsCache(
+            lastCommit: repository.currentCommitHash,
+            totalCommits: totalCommits,
+            totalLinesAdded: totalLinesAdded,
+            totalLinesRemoved: totalLinesRemoved,
+            currentLoc: currentLoc,
+            fileSet: Array(fileSet),
+            filesByDate: filesByDate,
+            locByDate: locByDate,
+            authorStats: authorStats.mapValues {
+                StatsCache.Author(
+                    name: $0.name,
+                    email: $0.email,
+                    commits: $0.commits,
+                    added: $0.added,
+                    removed: $0.removed,
+                    firstDate: $0.firstDate,
+                    lastDate: $0.lastDate
+                )
+            },
+            fileStats: fileStats.mapValues { StatsCache.File(commits: $0.commits, added: $0.added, removed: $0.removed) }
+        )
+        saveStatsCache(cacheToSave)
 
         return statsPath
     }
@@ -304,90 +398,28 @@ class GitStatsEngine {
         return statsPath
     }
 
-    @MainActor
-    private func clearExistingDataOnMain() {
-        let targetID = project.persistentModelID
-        let commitDescriptor = FetchDescriptor<Commit>(predicate: #Predicate { $0.project?.persistentModelID == targetID })
-        let authorDescriptor = FetchDescriptor<Author>(predicate: #Predicate { $0.project?.persistentModelID == targetID })
-        let fileDescriptor = FetchDescriptor<File>(predicate: #Predicate { $0.project?.persistentModelID == targetID })
-
-        if let commits = try? context.fetch(commitDescriptor) {
-            commits.forEach { context.delete($0) }
-        }
-        if let authors = try? context.fetch(authorDescriptor) {
-            authors.forEach { context.delete($0) }
-        }
-        if let files = try? context.fetch(fileDescriptor) {
-            files.forEach { context.delete($0) }
+    private func loadStatsCache() -> StatsCache? {
+        guard FileManager.default.fileExists(atPath: cacheURL.path) else { return nil }
+        do {
+            let data = try Data(contentsOf: cacheURL)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode(StatsCache.self, from: data)
+        } catch {
+            print("⚠️ Failed to load stats cache: \(error)")
+            return nil
         }
     }
 
-    @MainActor
-    private func loadExistingStats() {
-        let targetID = project.persistentModelID
-        let commitDescriptor = FetchDescriptor<Commit>(predicate: #Predicate { $0.project?.persistentModelID == targetID })
-        let authorDescriptor = FetchDescriptor<Author>(predicate: #Predicate { $0.project?.persistentModelID == targetID })
-        let fileDescriptor = FetchDescriptor<File>(predicate: #Predicate { $0.project?.persistentModelID == targetID })
-
-        // 加载作者统计
-        if let authors = try? context.fetch(authorDescriptor) {
-            for author in authors {
-                let key = "\(author.name) <\(author.email)>"
-                existingAuthorStats[key] = (
-                    name: author.name,
-                    email: author.email,
-                    commits: author.commitsCount,
-                    added: author.linesAdded,
-                    removed: author.linesRemoved,
-                    firstDate: author.firstCommitDate,
-                    lastDate: author.lastCommitDate
-                )
-            }
+    private func saveStatsCache(_ cache: StatsCache) {
+        do {
+            try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(cache)
+            try data.write(to: cacheURL, options: .atomic)
+        } catch {
+            print("⚠️ Failed to save stats cache: \(error)")
         }
-
-        // 加载文件统计
-        if let files = try? context.fetch(fileDescriptor) {
-            for file in files {
-                existingFileStats[file.path] = (commits: file.commitsCount, added: file.linesAdded, removed: file.linesRemoved)
-                existingFileSet.insert(file.path)
-            }
-        }
-
-        // 加载提交统计
-        if let commits = try? context.fetch(commitDescriptor) {
-            existingTotalCommits = commits.count
-            existingTotalLinesAdded = commits.reduce(0) { $0 + $1.linesAdded }
-            existingTotalLinesRemoved = commits.reduce(0) { $0 + $1.linesRemoved }
-
-            // 计算当前 LOC
-            existingCurrentLoc = 0
-            let isoDayFormatter: ISO8601DateFormatter = {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withFullDate]
-                return formatter
-            }()
-
-            for commit in commits.sorted(by: { $0.authorDate < $1.authorDate }) {
-                existingCurrentLoc = max(0, existingCurrentLoc + commit.linesAdded - commit.linesRemoved)
-
-                let day = Calendar.current.startOfDay(for: commit.authorDate)
-                let dayKey = isoDayFormatter.string(from: day)
-                existingFilesByDate[dayKey] = existingFileSet.count
-                existingLocByDate[dayKey] = existingCurrentLoc
-            }
-        }
-
-        print("📊 Loaded existing stats: \(existingTotalCommits) commits, \(existingTotalLinesAdded) added, \(existingTotalLinesRemoved) removed, \(existingCurrentLoc) LOC")
-    }
-
-    @MainActor
-    private func insertResults(commits: [Commit], authors: [Author], files: [File]) {
-        commits.forEach { context.insert($0) }
-        authors.forEach { context.insert($0) }
-        files.forEach { context.insert($0) }
-        try? context.save()
-        project.progressStage = "done"
-        project.progressProcessed = commits.count
-        project.progressTotal = commits.count
     }
 }
