@@ -245,6 +245,12 @@
         font-size: 14px;
       }
 
+      .table-scroll {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
       .table th,
       .table td {
         padding: 10px 12px;
@@ -708,21 +714,23 @@
             <h3>Tags</h3>
             <div class="pager" id="tagsPager"></div>
           </div>
-          <table class="table" id="tagsTable">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Date</th>
-                <th>Commits</th>
-                <th>Authors</th>
-                <th>Authors #</th>
-                <th>Days Since Prev</th>
-              </tr>
-            </thead>
-            <tbody>
-              {{TAG_ROWS}}
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="table" id="tagsTable">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Date</th>
+                  <th>Commits</th>
+                  <th>Authors</th>
+                  <th>Authors #</th>
+                  <th>Days Since Prev</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{TAG_ROWS}}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -802,26 +810,28 @@
             <div class="search-box"><input type="text" id="authorSearch" placeholder="Search authors..." /></div>
             <div class="pager" id="authorsPager"></div>
           </div>
-          <table class="table" id="authorsTable">
-            <thead>
-              <tr>
-                <th data-sort="name">Name</th>
-                <th data-sort="email">Email</th>
-                <th data-sort="commits">Commits</th>
-                <th data-sort="percent">Commit %</th>
-                <th data-sort="added">Lines Added</th>
-                <th data-sort="removed">Lines Removed</th>
-                <th data-sort="firstDate">First Commit</th>
-                <th data-sort="lastDate">Last Commit</th>
-                <th data-sort="age">Age (days)</th>
-                <th data-sort="active">Active Days</th>
-                <th data-sort="rank">Rank</th>
-              </tr>
-            </thead>
-            <tbody id="authorsTableBody">
-              {{AUTHOR_ROWS}}
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="table" id="authorsTable">
+              <thead>
+                <tr>
+                  <th data-sort="name">Name</th>
+                  <th data-sort="email">Email</th>
+                  <th data-sort="commits">Commits</th>
+                  <th data-sort="percent">Commit %</th>
+                  <th data-sort="added">Lines Added</th>
+                  <th data-sort="removed">Lines Removed</th>
+                  <th data-sort="firstDate">First Commit</th>
+                  <th data-sort="lastDate">Last Commit</th>
+                  <th data-sort="age">Age (days)</th>
+                  <th data-sort="active">Active Days</th>
+                  <th data-sort="rank">Rank</th>
+                </tr>
+              </thead>
+              <tbody id="authorsTableBody">
+                {{AUTHOR_ROWS}}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -844,21 +854,23 @@
             <h3>Extensions</h3>
             <div class="pager" id="extensionsPager"></div>
           </div>
-          <table class="table" id="extensionsTable">
-            <thead>
-              <tr>
-                <th>Extension</th>
-                <th>Files</th>
-                <th>% of Files</th>
-                <th>Lines</th>
-                <th>% of Lines</th>
-                <th>Lines/File</th>
-              </tr>
-            </thead>
-            <tbody>
-              {{EXTENSION_ROWS}}
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="table" id="extensionsTable">
+              <thead>
+                <tr>
+                  <th>Extension</th>
+                  <th>Files</th>
+                  <th>% of Files</th>
+                  <th>Lines</th>
+                  <th>% of Lines</th>
+                  <th>Lines/File</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{EXTENSION_ROWS}}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div class="card">
