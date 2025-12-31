@@ -11,13 +11,8 @@ ICON_ICNS="$ROOT_DIR/Sources/GitStatX/Resources/AppIcon.icns"
 SVG_ICON="$ROOT_DIR/Sources/GitStatX/Resources/AppIcon.svg"
 
 echo "▶️ Building ${APP_NAME} (release)..."
+swift build -c release
 BIN_PATH=$(swift build -c release --show-bin-path)
-
-if [[ ! -x "$BIN_PATH/$APP_NAME" ]]; then
-  echo "ℹ️ Executable not found at $BIN_PATH/$APP_NAME, rebuilding..."
-  swift build -c release
-  BIN_PATH=$(swift build -c release --show-bin-path)
-fi
 
 echo "🧹 Cleaning dist..."
 rm -rf "$APP_DIR"

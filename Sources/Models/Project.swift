@@ -1,5 +1,6 @@
 import SwiftData
 import Foundation
+import CryptoKit
 
 @Model
 final class Project {
@@ -47,7 +48,7 @@ final class Project {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appDirectory = appSupport.appendingPathComponent("GitStatX")
         let reportsDirectory = appDirectory.appendingPathComponent("Reports")
-        let projectDirectory = reportsDirectory.appendingPathComponent(identifier)
+        let projectDirectory = reportsDirectory.appendingPathComponent(statsKey)
 
         try? FileManager.default.createDirectory(at: projectDirectory, withIntermediateDirectories: true)
 
@@ -56,6 +57,12 @@ final class Project {
 
     var identifier: String {
         String(describing: persistentModelID)
+    }
+
+    private var statsKey: String {
+        guard let path, !path.isEmpty else { return identifier }
+        let digest = SHA256.hash(data: Data(path.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     var statsIndexPath: String {

@@ -14,10 +14,10 @@ struct ReportView: View {
     
     var body: some View {
         ZStack {
-            if isGeneratingStats {
-                GeneratingStatsView(processed: processedCommits, total: totalCommits, stage: stage)
-            } else if let path = statsPath {
+            if let path = statsPath {
                 WebReportView(statsPath: path)
+            } else if isGeneratingStats {
+                GeneratingStatsView(processed: processedCommits, total: totalCommits, stage: stage)
             } else if let err = error {
                 ErrorView(error: err) {
                     Task {
@@ -34,16 +34,13 @@ struct ReportView: View {
         }
         .onAppear {
             syncProgressFromProject()
-            if statsPath == nil && !isGeneratingStats && error == nil {
-                Task {
-                    await generateStats()
-                }
-            }
+            loadCachedReportIfAvailable()
+            Task { await ensureFreshReport() }
         }
     }
     
     private func generateStats() async {
-        isGeneratingStats = true
+        isGeneratingStats = statsPath == nil
         error = nil
         syncProgressFromProject()
         
@@ -73,6 +70,47 @@ struct ReportView: View {
         processedCommits = project.progressProcessed
         totalCommits = project.progressTotal
         stage = stageFromProject()
+    }
+
+    private func loadCachedReportIfAvailable() {
+        if project.statsExists {
+            statsPath = project.statsPath
+            isGeneratingStats = false
+        }
+    }
+
+    private func ensureFreshReport() async {
+        guard !isReportUpToDate() else { return }
+        await generateStats()
+    }
+
+    private func isReportUpToDate() -> Bool {
+        guard project.statsExists, let repoPath = project.path, let repository = GitRepository(path: repoPath), let head = repository.currentCommitHash else {
+            return false
+        }
+
+        if let cache = loadStatsCache(), cache.lastCommit == head {
+            return true
+        }
+
+        if let last = project.lastGeneratedCommit, last == head {
+            return true
+        }
+
+        return false
+    }
+
+    private func loadStatsCache() -> StatsCache? {
+        let cacheURL = URL(fileURLWithPath: project.statsPath).appendingPathComponent("stats_cache.json")
+        guard FileManager.default.fileExists(atPath: cacheURL.path) else { return nil }
+        do {
+            let data = try Data(contentsOf: cacheURL)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode(StatsCache.self, from: data)
+        } catch {
+            return nil
+        }
     }
 
     private func stageFromProject() -> GitStatsEngine.ProgressUpdate.Stage {
