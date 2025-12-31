@@ -30,6 +30,7 @@ GitStatX is a macOS app built with SwiftUI for generating offline, visual Git st
 ## Packaging
 - Run `./build.sh` to produce a release `.app` at `dist/GitStatX.app`.
 - GitHub Actions workflow `.github/workflows/ci.yml` runs `swift test` on `macos-latest`, then calls the same script and uploads the app bundle artifact.
+- App icon assets (`AppIcon.svg`, `AppIcon.iconset`, `AppIcon.icns`) are kept in `Sources/GitStatX/Resources/`; `build.sh` copies the `.icns` directly (falls back to generating from the SVG if missing).
 
 ## Directories & Storage
 - Reports and cache: `~/Library/Application Support/GitStatX/Reports/<project-id>/`

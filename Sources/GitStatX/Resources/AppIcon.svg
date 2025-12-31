@@ -1,0 +1,35 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GitStatX icon">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b1d3a"/>
+      <stop offset="100%" stop-color="#132f6b"/>
+    </linearGradient>
+    <linearGradient id="link" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5ad1ff"/>
+      <stop offset="100%" stop-color="#7de2c9"/>
+    </linearGradient>
+    <radialGradient id="node" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#d6e9ff" stop-opacity="0.92"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="104" fill="url(#bg)"/>
+  <g opacity="0.18" stroke="#6ea6ff" stroke-width="2">
+    <path d="M64 128h384M64 192h384M64 256h384M64 320h384M64 384h384"/>
+    <path d="M128 64v384M192 64v384M256 64v384M320 64v384M384 64v384"/>
+  </g>
+  <g stroke="url(#link)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M164 340c42-82 82-110 134-78 32 20 60 65 88 34 20-22 4-56-40-78-72-36-151-28-214 50"/>
+    <path d="M170 206c34-52 101-92 156-64 32 16 34 46 10 62-16 11-38 12-64-2-32-18-68-14-102 4"/>
+  </g>
+  <g>
+    <circle cx="160" cy="208" r="34" fill="url(#node)" stroke="#8dd7ff" stroke-width="6"/>
+    <circle cx="164" cy="344" r="38" fill="url(#node)" stroke="#8dd7ff" stroke-width="6"/>
+    <circle cx="310" cy="220" r="34" fill="url(#node)" stroke="#8dd7ff" stroke-width="6"/>
+    <circle cx="368" cy="296" r="28" fill="url(#node)" stroke="#8dd7ff" stroke-width="6"/>
+  </g>
+  <g fill="#93e2ff">
+    <path d="M248 122c0-11 9-20 20-20h40c11 0 20 9 20 20s-9 20-20 20h-40c-11 0-20-9-20-20z" opacity="0.9"/>
+    <path d="M226 402c0-10 8-18 18-18h72c10 0 18 8 18 18s-8 18-18 18h-72c-10 0-18-8-18-18z" opacity="0.85"/>
+  </g>
+</svg>
