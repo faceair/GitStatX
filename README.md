@@ -2,6 +2,8 @@
 
 GitStatX is a macOS app built with SwiftUI for generating offline, visual Git statistics reports. It parses commit history and file diffs via native Git commands, aggregates metadata into SwiftData, and writes an HTML report you can export as a folder.
 
+![](image.png)
+
 ## Features
 - Manage multiple repositories or folders in a sidebar
 - Incremental stats with cache (`stats_cache.json`) to skip unchanged commits
@@ -9,6 +11,15 @@ GitStatX is a macOS app built with SwiftUI for generating offline, visual Git st
 - Offline HTML report with bundled template and Chart.js assets
 - SwiftData persistence for authors, commits, and files
 - Export the generated report directory as a folder
+
+## Stats Coverage
+- Summary: total commits/authors/files, current LOC snapshot, total added/removed lines, repo age/active days, averages per day/author
+- Time: daily/weekly/monthly/yearly commit counts, last-32-weeks trend, hour/day/hour-of-week heatmaps, timezone breakdown, activity period range
+- Lines & files: cumulative LOC over time, yearly/monthly added vs. removed lines, file-count growth by date
+- Authors: per-author commits/add/remove, first/last commit dates, active days, email domain split, top authors plus month/year leaders
+- Files & content: per-file commit/add/remove stats, extensions with file counts/LOC/size snapshot, total and average file size
+- Tags: tag timeline with commit counts, author counts, days between tags
+- Details: full commit list (hash/author/date/message) for reference
 
 ## Requirements
 - macOS 14+
