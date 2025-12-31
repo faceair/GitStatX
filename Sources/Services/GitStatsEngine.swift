@@ -361,6 +361,8 @@ class GitStatsEngine {
         }
         let aggregateDuration = Date().timeIntervalSince(aggregateStart)
 
+        let commits = parsedCommits.map { $0.commit }
+
         let snapshotStart = Date()
         let snapshot: SnapshotStats?
         if let lastTreeHash = parsedCommits.last?.commit.treeHash {
@@ -375,10 +377,6 @@ class GitStatsEngine {
             snapshot = nil
         }
         let snapshotDuration = Date().timeIntervalSince(snapshotStart)
-
-        let allCommitsStart = Date()
-        let commits = repository.getAllCommits()
-        let allCommitsDuration = Date().timeIntervalSince(allCommitsStart)
 
         let timezoneStart = Date()
         let commitsByTimezone = Self.calculateTimezone(commits: commits)
@@ -411,7 +409,7 @@ class GitStatsEngine {
         let totalDuration = Date().timeIntervalSince(totalStart)
 
         func fmt(_ t: TimeInterval) -> String { String(format: "%.3fs", t) }
-        print("⏱ Timing => fetch: \(fmt(fetchDuration)), init: \(fmt(initDataDuration)), aggregate: \(fmt(aggregateDuration)), snapshot: \(fmt(snapshotDuration)), getAll: \(fmt(allCommitsDuration)), tz: \(fmt(timezoneDuration)), tags: \(fmt(tagsDuration)), report: \(fmt(reportDuration)), total: \(fmt(totalDuration))")
+        print("⏱ Timing => fetch: \(fmt(fetchDuration)), init: \(fmt(initDataDuration)), aggregate: \(fmt(aggregateDuration)), snapshot: \(fmt(snapshotDuration)), tz: \(fmt(timezoneDuration)), tags: \(fmt(tagsDuration)), report: \(fmt(reportDuration)), total: \(fmt(totalDuration))")
 
         let cacheToSave = StatsCache(
             lastCommit: repository.currentCommitHash,
