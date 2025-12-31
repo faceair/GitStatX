@@ -9,16 +9,12 @@ final class PerfTraceRealRepoTests: XCTestCase {
             throw XCTSkip("Repo not found at \(repoPath)")
         }
 
-        let storeURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("GitStatXPerfTrace_\(UUID().uuidString)")
-            .appendingPathExtension("sqlite")
-        let config = ModelConfiguration(url: storeURL)
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
             for: Project.self,
             configurations: config
         )
         let context = ModelContext(container)
-        defer { try? FileManager.default.removeItem(at: storeURL) }
 
         let project = Project(name: "Perf GuanceDB", path: repoPath)
         context.insert(project)

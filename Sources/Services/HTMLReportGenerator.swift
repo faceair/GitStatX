@@ -12,10 +12,38 @@ struct TagStats {
     let date: Date?
     let commits: Int
     let authors: [String: Int]
+    let authorCount: Int
+    let daysSincePrevious: Int?
 }
 
 class HTMLReportGenerator {
     let statsPath: String
+
+    private static let isoDayFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter
+    }()
+
+    private static let yearMonthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyy-MM"
+        return formatter
+    }()
+
+    private static let yearFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyy"
+        return formatter
+    }()
+
+    private static let gregorian = Calendar(identifier: .gregorian)
+    private static let isoWeekCalendar = Calendar(identifier: .iso8601)
 
     init(statsPath: String) {
         self.statsPath = statsPath
@@ -58,13 +86,23 @@ class HTMLReportGenerator {
             throw ReportError.templateNotFound
         }
 
+        let stageStart = Date()
+        var lastMark = stageStart
+        func mark(_ label: String) {
+            let now = Date()
+            let delta = now.timeIntervalSince(lastMark)
+            let total = now.timeIntervalSince(stageStart)
+            print(String(format: "⏱ Report %@: +%.3fs (%.3fs total)", label, delta, total))
+            lastMark = now
+        }
+
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
         let dateOnlyFormatter = DateFormatter()
         dateOnlyFormatter.dateStyle = .medium
         dateOnlyFormatter.timeStyle = .none
-        let calendar = Calendar.current
+        let calendar = Self.gregorian
 
         let periodStart = commits.first?.authorDate
         let periodEnd = commits.last?.authorDate
@@ -111,6 +149,9 @@ class HTMLReportGenerator {
         let averageFileSizeLabel = byteFormatter.string(fromByteCount: Int64(averageFileSize.rounded()))
         let totalTags = tags.count
         let avgCommitsPerTag = totalTags > 0 ? Double(tags.reduce(0) { $0 + $1.commits }) / Double(totalTags) : 0
+        let tagGaps = tags.compactMap { $0.daysSincePrevious }
+        let avgDaysBetweenTags = tagGaps.isEmpty ? 0 : Double(tagGaps.reduce(0, +)) / Double(tagGaps.count)
+        mark("derived data")
 
         template = template.replacingOccurrences(of: "{{PROJECT_NAME}}", with: projectName)
         template = template.replacingOccurrences(of: "{{TOTAL_COMMITS}}", with: totalCommits.formatted())
@@ -130,6 +171,7 @@ class HTMLReportGenerator {
         template = template.replacingOccurrences(of: "{{AVG_FILE_SIZE}}", with: averageFileSizeLabel)
         template = template.replacingOccurrences(of: "{{TOTAL_TAGS}}", with: totalTags.formatted())
         template = template.replacingOccurrences(of: "{{AVG_COMMITS_PER_TAG}}", with: String(format: "%.2f", avgCommitsPerTag))
+        template = template.replacingOccurrences(of: "{{AVG_DAYS_BETWEEN_TAGS}}", with: String(format: "%.2f", avgDaysBetweenTags))
         template = template.replacingOccurrences(of: "{{GENERATED_AT}}", with: dateFormatter.string(from: generatedAt))
 
         template = template.replacingOccurrences(of: "{{AUTHORS_JSON}}", with: Self.authorsToJSON(authors: authors, dateFormatter: dateFormatter))
@@ -168,6 +210,7 @@ class HTMLReportGenerator {
         template = template.replacingOccurrences(of: "{{AUTHOR_ROWS}}", with: Self.generateAuthorRows(authors: authors, dateFormatter: dateFormatter, totalCommits: totalCommits, activeDays: authorActiveDays))
         template = template.replacingOccurrences(of: "{{TIMEZONE_ROWS}}", with: Self.generateTimezoneRows(commitsByTimezone, totalCommits: totalCommits))
         template = template.replacingOccurrences(of: "{{TAG_ROWS}}", with: Self.generateTagRows(tags: tags))
+        mark("template replacements")
 
         let fileManager = FileManager.default
         try fileManager.createDirectory(atPath: statsPath, withIntermediateDirectories: true)
@@ -176,6 +219,7 @@ class HTMLReportGenerator {
 
         try copyChartJS()
         try copyTemplate()
+        mark("write+assets")
     }
 
     func copyTemplate() throws {
@@ -184,7 +228,11 @@ class HTMLReportGenerator {
         }
 
         let dest = URL(fileURLWithPath: statsPath).appendingPathComponent("report_template.html")
-        try FileManager.default.copyItem(at: source, to: dest)
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: dest.path) {
+            try fileManager.removeItem(at: dest)
+        }
+        try fileManager.copyItem(at: source, to: dest)
     }
 
     func copyChartJS() throws {
@@ -198,14 +246,18 @@ class HTMLReportGenerator {
         }
 
         let dest = destDir.appendingPathComponent("chart.min.js")
+        if fileManager.fileExists(atPath: dest.path) {
+            try fileManager.removeItem(at: dest)
+        }
         try fileManager.copyItem(at: source, to: dest)
     }
 
     private static func calculateActivityByDate(commits: [GitCommit]) -> [String: Int] {
-        let calendar = Calendar.current
+        let calendar = gregorian
+        let formatter = isoDayFormatter
         var activity: [String: Int] = [:]
         for commit in commits {
-            let dateStr = ISO8601DateFormatter().string(from: calendar.startOfDay(for: commit.authorDate))
+            let dateStr = formatter.string(from: calendar.startOfDay(for: commit.authorDate))
             activity[dateStr, default: 0] += 1
         }
         return activity
@@ -213,8 +265,9 @@ class HTMLReportGenerator {
 
     private static func calculateActivityByHour(commits: [GitCommit]) -> [Int] {
         var activity = Array(repeating: 0, count: 24)
+        let calendar = gregorian
         for commit in commits {
-            let hour = Calendar.current.component(.hour, from: commit.authorDate)
+            let hour = calendar.component(.hour, from: commit.authorDate)
             activity[hour] += 1
         }
         return activity
@@ -222,16 +275,16 @@ class HTMLReportGenerator {
 
     private static func calculateActivityByDayOfWeek(commits: [GitCommit]) -> [Int] {
         var activity = Array(repeating: 0, count: 7)
+        let calendar = gregorian
         for commit in commits {
-            let weekday = Calendar.current.component(.weekday, from: commit.authorDate)
+            let weekday = calendar.component(.weekday, from: commit.authorDate)
             activity[weekday - 1] += 1
         }
         return activity
     }
 
     private static func calculateCommitsByMonth(commits: [GitCommit]) -> [String: Int] {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM"
+        let formatter = yearMonthFormatter
         var commitsByMonth: [String: Int] = [:]
         for commit in commits {
             let month = formatter.string(from: commit.authorDate)
@@ -241,7 +294,7 @@ class HTMLReportGenerator {
     }
 
     private static func calculateCommitsByYear(commits: [GitCommit]) -> [String: Int] {
-        let calendar = Calendar.current
+        let calendar = gregorian
         var commitsByYear: [String: Int] = [:]
         for commit in commits {
             let year = calendar.component(.year, from: commit.authorDate)
@@ -251,8 +304,7 @@ class HTMLReportGenerator {
     }
 
     private static func calculateCommitsByYearMonth(commits: [GitCommit]) -> [String: Int] {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM"
+        let formatter = yearMonthFormatter
         var commitsByYearMonth: [String: Int] = [:]
         for commit in commits {
             let key = formatter.string(from: commit.authorDate)
@@ -263,15 +315,16 @@ class HTMLReportGenerator {
 
     private static func calculateCommitsByMonthOfYear(commits: [GitCommit]) -> [Int: Int] {
         var commitsByMonthOfYear: [Int: Int] = [:]
+        let calendar = gregorian
         for commit in commits {
-            let month = Calendar.current.component(.month, from: commit.authorDate)
+            let month = calendar.component(.month, from: commit.authorDate)
             commitsByMonthOfYear[month, default: 0] += 1
         }
         return commitsByMonthOfYear
     }
 
     private static func calculateCommitsByWeek(commits: [GitCommit]) -> [String: Int] {
-        let calendar = Calendar(identifier: .iso8601)
+        let calendar = isoWeekCalendar
         var commitsByWeek: [String: Int] = [:]
         for commit in commits {
             let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: commit.authorDate)
@@ -284,7 +337,7 @@ class HTMLReportGenerator {
     }
 
     private static func calculateRecentWeeks(commitsByWeek: [String: Int], limit: Int) -> [(String, Int)] {
-        let calendar = Calendar(identifier: .iso8601)
+        let calendar = isoWeekCalendar
         var result: [(String, Int)] = []
         var current = Date()
         var labels: [String] = []
@@ -302,7 +355,7 @@ class HTMLReportGenerator {
 
     private static func calculateHourOfWeek(commits: [GitCommit]) -> [[Int]] {
         var grid = Array(repeating: Array(repeating: 0, count: 24), count: 7)
-        let calendar = Calendar.current
+        let calendar = gregorian
         for commit in commits {
             let weekday = max(0, calendar.component(.weekday, from: commit.authorDate) - 1)
             let hour = calendar.component(.hour, from: commit.authorDate)
@@ -322,8 +375,7 @@ class HTMLReportGenerator {
 
     private static func calculateAuthorLeaders(commits: [GitCommit], component: Calendar.Component) -> [String: [(name: String, commits: Int)]] {
         var result: [String: [(name: String, commits: Int)]] = [:]
-        let formatter = DateFormatter()
-        formatter.dateFormat = component == .year ? "yyyy" : "yyyy-MM"
+        let formatter = component == .year ? yearFormatter : yearMonthFormatter
 
         var grouped: [String: [String: Int]] = [:]
         for commit in commits {
@@ -341,7 +393,7 @@ class HTMLReportGenerator {
 
     private static func calculateAuthorActiveDays(commits: [GitCommit]) -> [String: Int] {
         var active: [String: Set<Date>] = [:]
-        let calendar = Calendar.current
+        let calendar = gregorian
         for commit in commits {
             let key = "\(commit.authorName) <\(commit.authorEmail)>"
             let day = calendar.startOfDay(for: commit.authorDate)
@@ -369,12 +421,32 @@ class HTMLReportGenerator {
     }
 
     private static func commitsToJSON(commits: [GitCommit], dateFormatter: DateFormatter) -> String {
-        let items = commits.reversed().map { commit -> String in
+        var result = String()
+        result.reserveCapacity(max(32_768, commits.count * 96))
+        result.append("[")
+
+        var first = true
+        for commit in commits.reversed() {
+            if first {
+                first = false
+            } else {
+                result.append(",")
+            }
             let date = dateFormatter.string(from: commit.authorDate)
-            let message = commit.message.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            return "{\"hash\":\(escapeJSON(String(commit.hash.prefix(7)))),\"author\":\(escapeJSON(commit.authorName)),\"date\":\(escapeJSON(date)),\"message\":\(escapeJSON(message))}"
+            let shortHash = String(commit.hash.prefix(7))
+            result.append("{\"hash\":")
+            result.append(escapeJSON(shortHash))
+            result.append(",\"author\":")
+            result.append(escapeJSON(commit.authorName))
+            result.append(",\"date\":")
+            result.append(escapeJSON(date))
+            result.append(",\"message\":")
+            result.append(escapeJSON(commit.message))
+            result.append("}")
         }
-        return "[\(items.joined(separator: ","))]"
+
+        result.append("]")
+        return result
     }
 
     private static func filesToJSON(files: [String: (commits: Int, added: Int, removed: Int)]) -> String {
@@ -454,7 +526,8 @@ class HTMLReportGenerator {
         let items = sorted.map { tag -> String in
             let date = tag.date.map { escapeJSON(formatter.string(from: $0)) } ?? "\"\""
             let authors = tag.authors.sorted { $0.value > $1.value }.map { "{\"name\":\(escapeJSON($0.key)),\"commits\":\($0.value)}" }.joined(separator: ",")
-            return "{\"name\":\(escapeJSON(tag.name)),\"date\":\(date),\"commits\":\(tag.commits),\"authors\":[\(authors)]}"
+            let gap = tag.daysSincePrevious.map(String.init) ?? "null"
+            return "{\"name\":\(escapeJSON(tag.name)),\"date\":\(date),\"commits\":\(tag.commits),\"authorCount\":\(tag.authorCount),\"daysSincePrevious\":\(gap),\"authors\":[\(authors)]}"
         }
         return "[\(items.joined(separator: ","))]"
     }
@@ -610,18 +683,26 @@ class HTMLReportGenerator {
     }
 
     private static func generateCommitRows(commits: [GitCommit], dateFormatter: DateFormatter) -> String {
-        return commits.reversed().map { commit -> String in
+        var builder = String()
+        builder.reserveCapacity(max(32_768, commits.count * 96))
+
+        for commit in commits.reversed() {
             let date = dateFormatter.string(from: commit.authorDate)
             let shortHash = String(commit.hash.prefix(7))
-            return """
-            <tr>
-                <td><code>\(shortHash)</code></td>
-                <td>\(escapeHTML(commit.authorName))</td>
-                <td>\(date)</td>
-                <td>\(escapeHTML(commit.message))</td>
-            </tr>
-            """
-        }.joined(separator: "\n")
+            builder.append(
+                """
+                <tr>
+                    <td><code>\(shortHash)</code></td>
+                    <td>\(escapeHTML(commit.authorName))</td>
+                    <td>\(date)</td>
+                    <td>\(escapeHTML(commit.message))</td>
+                </tr>
+                """
+            )
+            builder.append("\n")
+        }
+
+        return builder
     }
 
     private static func generateFileRows(files: [String: (commits: Int, added: Int, removed: Int)]) -> String {
@@ -663,12 +744,15 @@ class HTMLReportGenerator {
             let authors = tag.authors.sorted { lhs, rhs in lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value }
                 .map { "\(escapeHTML($0.key)) (\($0.value))" }
                 .joined(separator: ", ")
+            let daysSincePrevious = tag.daysSincePrevious.map(String.init) ?? "N/A"
             return """
             <tr>
                 <td>\(escapeHTML(tag.name))</td>
                 <td>\(date)</td>
                 <td>\(tag.commits.formatted())</td>
                 <td>\(escapeHTML(authors))</td>
+                <td>\(tag.authorCount.formatted())</td>
+                <td>\(daysSincePrevious)</td>
             </tr>
             """
         }.joined(separator: "\n")

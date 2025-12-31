@@ -380,6 +380,14 @@ class GitStatsEngine {
         let commits = repository.getAllCommits()
         let allCommitsDuration = Date().timeIntervalSince(allCommitsStart)
 
+        let timezoneStart = Date()
+        let commitsByTimezone = Self.calculateTimezone(commits: commits)
+        let timezoneDuration = Date().timeIntervalSince(timezoneStart)
+
+        let tagsStart = Date()
+        let tags = Self.calculateTags(repository: repository, commits: commits)
+        let tagsDuration = Date().timeIntervalSince(tagsStart)
+
         let reportStart = Date()
         let statsPath = try await generateHTMLReport(
             totalCommits: totalCommits,
@@ -396,14 +404,14 @@ class GitStatsEngine {
             linesAddedByYearMonth: linesAddedByYearMonth,
             linesRemovedByYearMonth: linesRemovedByYearMonth,
             generatedAt: generatedAt,
-            commitsByTimezone: Self.calculateTimezone(commits: commits),
-            tags: Self.calculateTags(repository: repository, commits: commits)
+            commitsByTimezone: commitsByTimezone,
+            tags: tags
         )
         let reportDuration = Date().timeIntervalSince(reportStart)
         let totalDuration = Date().timeIntervalSince(totalStart)
 
         func fmt(_ t: TimeInterval) -> String { String(format: "%.3fs", t) }
-        print("⏱ Timing => fetch: \(fmt(fetchDuration)), init: \(fmt(initDataDuration)), aggregate: \(fmt(aggregateDuration)), snapshot: \(fmt(snapshotDuration)), getAll: \(fmt(allCommitsDuration)), report: \(fmt(reportDuration)), total: \(fmt(totalDuration))")
+        print("⏱ Timing => fetch: \(fmt(fetchDuration)), init: \(fmt(initDataDuration)), aggregate: \(fmt(aggregateDuration)), snapshot: \(fmt(snapshotDuration)), getAll: \(fmt(allCommitsDuration)), tz: \(fmt(timezoneDuration)), tags: \(fmt(tagsDuration)), report: \(fmt(reportDuration)), total: \(fmt(totalDuration))")
 
         let cacheToSave = StatsCache(
             lastCommit: repository.currentCommitHash,
@@ -535,17 +543,67 @@ class GitStatsEngine {
             }
         }
 
+        let calendar = Calendar(identifier: .gregorian)
+        let commitCount = commits.count
+        let indexByHash = Dictionary(uniqueKeysWithValues: commits.enumerated().map { ($0.element.hash, $0.offset) })
+        let parentsByIndex: [[String]] = commits.map { $0.parentHashes }
+
         var result: [TagStats] = []
-        var previousTag: String?
+        var previousReachable = Array(repeating: false, count: commitCount)
+        var previousDate: Date?
+
         for tag in sorted {
-            let shortlog = repository.getShortlogBetween(tag: tag.name, previousTag: previousTag)
-            let commitsForTag = shortlog.reduce(0) { $0 + $1.commits }
+            guard let startIndex = indexByHash[tag.commitHash] else { continue }
+
+            var stack: [Int] = [startIndex]
+            var reachable = Array(repeating: false, count: commitCount)
             var authors: [String: Int] = [:]
-            for entry in shortlog {
-                authors[entry.author, default: 0] += entry.commits
+            var commitTotal = 0
+
+            while let idx = stack.popLast() {
+                if reachable[idx] { continue }
+                reachable[idx] = true
+
+                for parentHash in parentsByIndex[idx] {
+                    if let parentIndex = indexByHash[parentHash] {
+                        stack.append(parentIndex)
+                    }
+                }
+
+                if previousReachable[idx] {
+                    continue
+                }
+
+                commitTotal += 1
+                let commit = commits[idx]
+                authors[commit.authorName, default: 0] += 1
             }
-            result.append(TagStats(name: tag.name, date: tag.date, commits: commitsForTag, authors: authors))
-            previousTag = tag.name
+
+            let daysSincePrevious: Int?
+            if let currentDate = tag.date, let prevDate = previousDate {
+                let startCurrent = calendar.startOfDay(for: currentDate)
+                let startPrev = calendar.startOfDay(for: prevDate)
+                let delta = calendar.dateComponents([.day], from: startPrev, to: startCurrent).day ?? 0
+                daysSincePrevious = max(0, delta)
+            } else {
+                daysSincePrevious = nil
+            }
+
+            result.append(
+                TagStats(
+                    name: tag.name,
+                    date: tag.date,
+                    commits: commitTotal,
+                    authors: authors,
+                    authorCount: authors.count,
+                    daysSincePrevious: daysSincePrevious
+                )
+            )
+
+            previousReachable = reachable
+            if let date = tag.date {
+                previousDate = date
+            }
         }
 
         return result
