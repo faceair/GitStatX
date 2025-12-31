@@ -4,6 +4,14 @@ struct SnapshotStats {
     let fileCount: Int
     let lineCount: Int
     let extensions: [String: (files: Int, lines: Int)]
+    let totalSize: Int
+}
+
+struct TagStats {
+    let name: String
+    let date: Date?
+    let commits: Int
+    let authors: [String: Int]
 }
 
 class HTMLReportGenerator {
@@ -34,7 +42,14 @@ class HTMLReportGenerator {
         files: [String: (commits: Int, added: Int, removed: Int)],
         snapshot: SnapshotStats?,
         filesByDate: [String: Int],
-        locByDate: [String: Int]
+        locByDate: [String: Int],
+        linesAddedByYear: [String: Int],
+        linesRemovedByYear: [String: Int],
+        linesAddedByYearMonth: [String: Int],
+        linesRemovedByYearMonth: [String: Int],
+        generatedAt: Date,
+        commitsByTimezone: [Int: Int],
+        tags: [TagStats]
     ) throws {
         guard
             let templateURL = resourceBundle.url(forResource: "report_template", withExtension: "html", subdirectory: "templates"),
@@ -69,6 +84,10 @@ class HTMLReportGenerator {
         } else {
             periodRange = "N/A"
         }
+        let activeDaysPercent = ageDays > 0 ? (Double(activeDays) / Double(ageDays) * 100) : 0
+        let avgPerAuthor = totalAuthors > 0 ? Double(totalCommits) / Double(totalAuthors) : 0
+        let totalSize = snapshot?.totalSize ?? 0
+        let averageFileSize = totalFiles > 0 ? Double(totalSize) / Double(totalFiles) : 0
 
         let activityByDate = Self.calculateActivityByDate(commits: commits)
         let activityByHour = Self.calculateActivityByHour(commits: commits)
@@ -78,10 +97,20 @@ class HTMLReportGenerator {
         let commitsByWeek = Self.calculateCommitsByWeek(commits: commits)
         let commitsByYear = Self.calculateCommitsByYear(commits: commits)
         let commitsByYearMonth = Self.calculateCommitsByYearMonth(commits: commits)
+        let commitsByMonthOfYear = Self.calculateCommitsByMonthOfYear(commits: commits)
+        let recentWeeks = Self.calculateRecentWeeks(commitsByWeek: commitsByWeek, limit: 32)
+        let authorActiveDays = Self.calculateAuthorActiveDays(commits: commits)
         let hourOfWeek = Self.calculateHourOfWeek(commits: commits)
         let domains = Self.calculateDomains(authors: authors)
         let authorOfMonth = Self.calculateAuthorLeaders(commits: commits, component: .month)
         let authorOfYear = Self.calculateAuthorLeaders(commits: commits, component: .year)
+        let byteFormatter = ByteCountFormatter()
+        byteFormatter.allowedUnits = [.useKB, .useMB, .useGB]
+        byteFormatter.countStyle = .file
+        let totalSizeLabel = byteFormatter.string(fromByteCount: Int64(totalSize))
+        let averageFileSizeLabel = byteFormatter.string(fromByteCount: Int64(averageFileSize.rounded()))
+        let totalTags = tags.count
+        let avgCommitsPerTag = totalTags > 0 ? Double(tags.reduce(0) { $0 + $1.commits }) / Double(totalTags) : 0
 
         template = template.replacingOccurrences(of: "{{PROJECT_NAME}}", with: projectName)
         template = template.replacingOccurrences(of: "{{TOTAL_COMMITS}}", with: totalCommits.formatted())
@@ -95,6 +124,13 @@ class HTMLReportGenerator {
         template = template.replacingOccurrences(of: "{{AGE_DAYS}}", with: ageDays.formatted())
         template = template.replacingOccurrences(of: "{{AVG_PER_ACTIVE_DAY}}", with: String(format: "%.2f", avgPerActiveDay))
         template = template.replacingOccurrences(of: "{{AVG_PER_DAY}}", with: String(format: "%.2f", avgPerDay))
+        template = template.replacingOccurrences(of: "{{ACTIVE_DAYS_PERCENT}}", with: String(format: "%.2f", activeDaysPercent))
+        template = template.replacingOccurrences(of: "{{AVG_PER_AUTHOR}}", with: String(format: "%.2f", avgPerAuthor))
+        template = template.replacingOccurrences(of: "{{TOTAL_SIZE}}", with: totalSizeLabel)
+        template = template.replacingOccurrences(of: "{{AVG_FILE_SIZE}}", with: averageFileSizeLabel)
+        template = template.replacingOccurrences(of: "{{TOTAL_TAGS}}", with: totalTags.formatted())
+        template = template.replacingOccurrences(of: "{{AVG_COMMITS_PER_TAG}}", with: String(format: "%.2f", avgCommitsPerTag))
+        template = template.replacingOccurrences(of: "{{GENERATED_AT}}", with: dateFormatter.string(from: generatedAt))
 
         template = template.replacingOccurrences(of: "{{AUTHORS_JSON}}", with: Self.authorsToJSON(authors: authors, dateFormatter: dateFormatter))
         template = template.replacingOccurrences(of: "{{COMMITS_JSON}}", with: Self.commitsToJSON(commits: commits, dateFormatter: dateFormatter))
@@ -105,6 +141,11 @@ class HTMLReportGenerator {
         template = template.replacingOccurrences(of: "{{COMMITS_BY_WEEK_JSON}}", with: Self.dictToJSON(commitsByWeek))
         template = template.replacingOccurrences(of: "{{COMMITS_BY_YEAR_JSON}}", with: Self.dictToJSON(commitsByYear))
         template = template.replacingOccurrences(of: "{{COMMITS_BY_YEAR_MONTH_JSON}}", with: Self.dictToJSON(commitsByYearMonth))
+        template = template.replacingOccurrences(of: "{{COMMITS_BY_MONTH_OF_YEAR_JSON}}", with: Self.arrayToJSON((1...12).map { commitsByMonthOfYear[$0] ?? 0 }))
+        template = template.replacingOccurrences(of: "{{RECENT_WEEKS_JSON}}", with: Self.recentWeeksToJSON(recentWeeks))
+        template = template.replacingOccurrences(of: "{{TIMEZONE_JSON}}", with: Self.timezoneToJSON(commitsByTimezone, totalCommits: totalCommits))
+        template = template.replacingOccurrences(of: "{{LINES_BY_YEAR_JSON}}", with: Self.linesByPeriodToJSON(added: linesAddedByYear, removed: linesRemovedByYear))
+        template = template.replacingOccurrences(of: "{{LINES_BY_YEAR_MONTH_JSON}}", with: Self.linesByPeriodToJSON(added: linesAddedByYearMonth, removed: linesRemovedByYearMonth))
         template = template.replacingOccurrences(of: "{{FILES_JSON}}", with: Self.filesToJSON(files: files))
         template = template.replacingOccurrences(of: "{{FILES_BY_DATE_JSON}}", with: Self.dictToJSON(filesByDate))
         template = template.replacingOccurrences(of: "{{LOC_BY_DATE_JSON}}", with: Self.dictToJSON(locByDate))
@@ -113,17 +154,20 @@ class HTMLReportGenerator {
         template = template.replacingOccurrences(of: "{{EXTENSION_JSON}}", with: Self.extensionToJSON(snapshot?.extensions ?? [:], totalFiles: snapshot?.fileCount ?? 0, totalLines: snapshot?.lineCount ?? 0))
         template = template.replacingOccurrences(of: "{{AUTHOR_OF_MONTH_JSON}}", with: Self.authorLeaderJSON(authorOfMonth))
         template = template.replacingOccurrences(of: "{{AUTHOR_OF_YEAR_JSON}}", with: Self.authorLeaderJSON(authorOfYear))
+        template = template.replacingOccurrences(of: "{{TAGS_JSON}}", with: Self.tagsToJSON(tags: tags))
         template = template.replacingOccurrences(of: "{{TOP_AUTHORS_JSON}}", with: Self.topAuthorsToJSON(topAuthors: topAuthors))
 
-        template = template.replacingOccurrences(of: "{{AUTHOR_ROWS}}", with: Self.generateAuthorRows(authors: authors, dateFormatter: dateFormatter))
         template = template.replacingOccurrences(of: "{{COMMIT_ROWS}}", with: Self.generateCommitRows(commits: commits, dateFormatter: dateFormatter))
         template = template.replacingOccurrences(of: "{{FILE_ROWS}}", with: Self.generateFileRows(files: files))
         template = template.replacingOccurrences(of: "{{DOMAIN_ROWS}}", with: Self.generateDomainRows(domains: domains, totalCommits: totalCommits))
         template = template.replacingOccurrences(of: "{{EXTENSION_ROWS}}", with: Self.generateExtensionRows(snapshot?.extensions ?? [:], totalFiles: snapshot?.fileCount ?? 0, totalLines: snapshot?.lineCount ?? 0))
         template = template.replacingOccurrences(of: "{{AUTHOR_OF_MONTH_ROWS}}", with: Self.generateAuthorLeaderRows(authorOfMonth))
         template = template.replacingOccurrences(of: "{{AUTHOR_OF_YEAR_ROWS}}", with: Self.generateAuthorLeaderRows(authorOfYear))
-        template = template.replacingOccurrences(of: "{{COMMITS_BY_YEAR_ROWS}}", with: Self.generateCommitsByYearRows(commitsByYear: commitsByYear))
-        template = template.replacingOccurrences(of: "{{COMMITS_BY_YEAR_MONTH_ROWS}}", with: Self.generateCommitsByYearMonthRows(commitsByYearMonth: commitsByYearMonth))
+        template = template.replacingOccurrences(of: "{{COMMITS_BY_YEAR_ROWS}}", with: Self.generateCommitsByYearRows(commitsByYear: commitsByYear, linesAdded: linesAddedByYear, linesRemoved: linesRemovedByYear))
+        template = template.replacingOccurrences(of: "{{COMMITS_BY_YEAR_MONTH_ROWS}}", with: Self.generateCommitsByYearMonthRows(commitsByYearMonth: commitsByYearMonth, linesAdded: linesAddedByYearMonth, linesRemoved: linesRemovedByYearMonth))
+        template = template.replacingOccurrences(of: "{{AUTHOR_ROWS}}", with: Self.generateAuthorRows(authors: authors, dateFormatter: dateFormatter, totalCommits: totalCommits, activeDays: authorActiveDays))
+        template = template.replacingOccurrences(of: "{{TIMEZONE_ROWS}}", with: Self.generateTimezoneRows(commitsByTimezone, totalCommits: totalCommits))
+        template = template.replacingOccurrences(of: "{{TAG_ROWS}}", with: Self.generateTagRows(tags: tags))
 
         let fileManager = FileManager.default
         try fileManager.createDirectory(atPath: statsPath, withIntermediateDirectories: true)
@@ -217,6 +261,15 @@ class HTMLReportGenerator {
         return commitsByYearMonth
     }
 
+    private static func calculateCommitsByMonthOfYear(commits: [GitCommit]) -> [Int: Int] {
+        var commitsByMonthOfYear: [Int: Int] = [:]
+        for commit in commits {
+            let month = Calendar.current.component(.month, from: commit.authorDate)
+            commitsByMonthOfYear[month, default: 0] += 1
+        }
+        return commitsByMonthOfYear
+    }
+
     private static func calculateCommitsByWeek(commits: [GitCommit]) -> [String: Int] {
         let calendar = Calendar(identifier: .iso8601)
         var commitsByWeek: [String: Int] = [:]
@@ -228,6 +281,23 @@ class HTMLReportGenerator {
             commitsByWeek[key, default: 0] += 1
         }
         return commitsByWeek
+    }
+
+    private static func calculateRecentWeeks(commitsByWeek: [String: Int], limit: Int) -> [(String, Int)] {
+        let calendar = Calendar(identifier: .iso8601)
+        var result: [(String, Int)] = []
+        var current = Date()
+        var labels: [String] = []
+        for _ in 0..<limit {
+            let comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: current)
+            let label = String(format: "%04d-W%02d", comps.yearForWeekOfYear ?? 0, comps.weekOfYear ?? 0)
+            labels.insert(label, at: 0)
+            current = calendar.date(byAdding: .weekOfYear, value: -1, to: current) ?? current
+        }
+        for label in labels {
+            result.append((label, commitsByWeek[label] ?? 0))
+        }
+        return result
     }
 
     private static func calculateHourOfWeek(commits: [GitCommit]) -> [[Int]] {
@@ -267,6 +337,19 @@ class HTMLReportGenerator {
         }
 
         return result
+    }
+
+    private static func calculateAuthorActiveDays(commits: [GitCommit]) -> [String: Int] {
+        var active: [String: Set<Date>] = [:]
+        let calendar = Calendar.current
+        for commit in commits {
+            let key = "\(commit.authorName) <\(commit.authorEmail)>"
+            let day = calendar.startOfDay(for: commit.authorDate)
+            var days = active[key] ?? Set<Date>()
+            days.insert(day)
+            active[key] = days
+        }
+        return active.mapValues { $0.count }
     }
 
     private static func getTopAuthors(authors: [String: (name: String, email: String, commits: Int, added: Int, removed: Int, firstDate: Date?, lastDate: Date?)], limit: Int) -> [(name: String, commits: Int)] {
@@ -339,6 +422,43 @@ class HTMLReportGenerator {
         return "[\(items.joined(separator: ","))]"
     }
 
+    private static func linesByPeriodToJSON(added: [String: Int], removed: [String: Int]) -> String {
+        let keys = Set(added.keys).union(removed.keys).sorted()
+        let items = keys.map { key -> String in
+            let add = added[key] ?? 0
+            let rem = removed[key] ?? 0
+            let net = add - rem
+            return "{\"period\":\(escapeJSON(key)),\"added\":\(add),\"removed\":\(rem),\"net\":\(net)}"
+        }
+        return "[\(items.joined(separator: ","))]"
+    }
+
+    private static func recentWeeksToJSON(_ weeks: [(String, Int)]) -> String {
+        let items = weeks.map { "{\"label\":\(escapeJSON($0.0)),\"commits\":\($0.1)}" }
+        return "[\(items.joined(separator: ","))]"
+    }
+
+    private static func timezoneToJSON(_ timezones: [Int: Int], totalCommits: Int) -> String {
+        let sorted = timezones.keys.sorted()
+        let items = sorted.map { offset -> String in
+            let commits = timezones[offset] ?? 0
+            let percent = totalCommits > 0 ? (Double(commits) / Double(totalCommits) * 100) : 0
+            return "{\"offset\":\(escapeJSON(formatTimezoneOffset(offset))),\"commits\":\(commits),\"percent\":\(String(format: "%.2f", percent))}"
+        }
+        return "[\(items.joined(separator: ","))]"
+    }
+
+    private static func tagsToJSON(tags: [TagStats]) -> String {
+        let formatter = ISO8601DateFormatter()
+        let sorted = tags.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+        let items = sorted.map { tag -> String in
+            let date = tag.date.map { escapeJSON(formatter.string(from: $0)) } ?? "\"\""
+            let authors = tag.authors.sorted { $0.value > $1.value }.map { "{\"name\":\(escapeJSON($0.key)),\"commits\":\($0.value)}" }.joined(separator: ",")
+            return "{\"name\":\(escapeJSON(tag.name)),\"date\":\(date),\"commits\":\(tag.commits),\"authors\":[\(authors)]}"
+        }
+        return "[\(items.joined(separator: ","))]"
+    }
+
     private static func authorLeaderJSON(_ leaders: [String: [(name: String, commits: Int)]]) -> String {
         let items = leaders.sorted { $0.key < $1.key }.map { key, list in
             let leadersJSON = list.map { "{\"name\":\(escapeJSON($0.name)),\"commits\":\($0.commits)}" }.joined(separator: ",")
@@ -354,6 +474,14 @@ class HTMLReportGenerator {
             .replacingOccurrences(of: "\r", with: "\\r")
             .replacingOccurrences(of: "\t", with: "\\t")
         return "\"\(escaped)\""
+    }
+
+    private static func formatTimezoneOffset(_ minutes: Int) -> String {
+        let sign = minutes >= 0 ? "+" : "-"
+        let value = abs(minutes)
+        let hours = value / 60
+        let mins = value % 60
+        return String(format: "UTC%@%02d:%02d", sign, hours, mins)
     }
 
     private static func generateDomainRows(domains: [String: Int], totalCommits: Int) -> String {
@@ -375,6 +503,7 @@ class HTMLReportGenerator {
         return sorted.map { ext, stats in
             let filePercent = totalFiles > 0 ? (Double(stats.files) / Double(totalFiles) * 100) : 0
             let linePercent = totalLines > 0 ? (Double(stats.lines) / Double(totalLines) * 100) : 0
+            let linesPerFile = stats.files > 0 ? Double(stats.lines) / Double(stats.files) : 0
             let label = ext == "no-extension" ? "No Extension" : ext
             return """
             <tr>
@@ -383,6 +512,7 @@ class HTMLReportGenerator {
                 <td>\(String(format: "%.2f", filePercent))%</td>
                 <td>\(stats.lines.formatted())</td>
                 <td>\(String(format: "%.2f", linePercent))%</td>
+                <td>\(String(format: "%.2f", linesPerFile))</td>
             </tr>
             """
         }.joined(separator: "\n")
@@ -404,44 +534,76 @@ class HTMLReportGenerator {
         }.joined(separator: "\n")
     }
 
-    private static func generateCommitsByYearRows(commitsByYear: [String: Int]) -> String {
-        let sorted = commitsByYear.sorted { lhs, rhs in lhs.key > rhs.key }
-        return sorted.map { year, count in
-            """
+    private static func generateCommitsByYearRows(commitsByYear: [String: Int], linesAdded: [String: Int], linesRemoved: [String: Int]) -> String {
+        let keys = Set(commitsByYear.keys).union(linesAdded.keys).union(linesRemoved.keys)
+        let sorted = keys.sorted { $0 > $1 }
+        return sorted.map { year in
+            let count = commitsByYear[year] ?? 0
+            let added = linesAdded[year] ?? 0
+            let removed = linesRemoved[year] ?? 0
+            let net = added - removed
+            return """
             <tr>
                 <td>\(escapeHTML(year))</td>
                 <td>\(count.formatted())</td>
+                <td>\(added.formatted())</td>
+                <td>\(removed.formatted())</td>
+                <td>\(net.formatted())</td>
             </tr>
             """
         }.joined(separator: "\n")
     }
 
-    private static func generateCommitsByYearMonthRows(commitsByYearMonth: [String: Int]) -> String {
-        let sorted = commitsByYearMonth.sorted { lhs, rhs in lhs.key > rhs.key }
-        return sorted.map { ym, count in
-            """
+    private static func generateCommitsByYearMonthRows(commitsByYearMonth: [String: Int], linesAdded: [String: Int], linesRemoved: [String: Int]) -> String {
+        let keys = Set(commitsByYearMonth.keys).union(linesAdded.keys).union(linesRemoved.keys)
+        let sorted = keys.sorted { $0 > $1 }
+        return sorted.map { ym in
+            let count = commitsByYearMonth[ym] ?? 0
+            let added = linesAdded[ym] ?? 0
+            let removed = linesRemoved[ym] ?? 0
+            let net = added - removed
+            return """
             <tr>
                 <td>\(escapeHTML(ym))</td>
                 <td>\(count.formatted())</td>
+                <td>\(added.formatted())</td>
+                <td>\(removed.formatted())</td>
+                <td>\(net.formatted())</td>
             </tr>
             """
         }.joined(separator: "\n")
     }
 
-    private static func generateAuthorRows(authors: [String: (name: String, email: String, commits: Int, added: Int, removed: Int, firstDate: Date?, lastDate: Date?)], dateFormatter: DateFormatter) -> String {
-        let sorted = authors.values.sorted { a, b in a.commits > b.commits }
-        return sorted.map { author -> String in
+    private static func generateAuthorRows(authors: [String: (name: String, email: String, commits: Int, added: Int, removed: Int, firstDate: Date?, lastDate: Date?)], dateFormatter: DateFormatter, totalCommits: Int, activeDays: [String: Int]) -> String {
+        let calendar = Calendar.current
+        let sorted = authors.sorted { lhs, rhs in lhs.value.commits == rhs.value.commits ? lhs.value.name < rhs.value.name : lhs.value.commits > rhs.value.commits }
+        return sorted.enumerated().map { index, entry -> String in
+            let author = entry.value
+            let key = entry.key
             let firstDate = author.firstDate.map { dateFormatter.string(from: $0) } ?? "N/A"
             let lastDate = author.lastDate.map { dateFormatter.string(from: $0) } ?? "N/A"
+            let ageDays: Int
+            if let first = author.firstDate, let last = author.lastDate {
+                ageDays = max(1, calendar.dateComponents([.day], from: calendar.startOfDay(for: first), to: calendar.startOfDay(for: last)).day ?? 0) + 1
+            } else {
+                ageDays = 0
+            }
+            let percent = totalCommits > 0 ? (Double(author.commits) / Double(totalCommits) * 100) : 0
+            let active = activeDays[key] ?? 0
+            let rank = index + 1
             return """
             <tr>
                 <td>\(escapeHTML(author.name))</td>
                 <td><code>\(escapeHTML(author.email))</code></td>
                 <td>\(author.commits.formatted())</td>
+                <td>\(String(format: "%.2f", percent))%</td>
                 <td>\(author.added.formatted())</td>
                 <td>\(author.removed.formatted())</td>
                 <td>\(firstDate)</td>
                 <td>\(lastDate)</td>
+                <td>\(ageDays.formatted())</td>
+                <td>\(active.formatted())</td>
+                <td>\(rank)</td>
             </tr>
             """
         }.joined(separator: "\n")
@@ -465,15 +627,48 @@ class HTMLReportGenerator {
     private static func generateFileRows(files: [String: (commits: Int, added: Int, removed: Int)]) -> String {
         let sorted = files.sorted { $0.value.commits > $1.value.commits }
         return sorted.map { (path, stats) -> String in
-            let netClass = (stats.added - stats.removed) >= 0 ? "badge-success" : "badge-warning"
-            let netSign = (stats.added - stats.removed) >= 0 ? "+" : ""
-            let netValue = (stats.added - stats.removed).formatted()
             return """
             <tr>
                 <td><code>\(escapeHTML(path))</code></td>
                 <td>\(stats.commits.formatted())</td>
                 <td>\(stats.added.formatted())</td>
-                <td><span class="badge \(netClass)">\(netSign)\(netValue)</span></td>
+                <td>\(stats.removed.formatted())</td>
+            </tr>
+            """
+        }.joined(separator: "\n")
+    }
+
+    private static func generateTimezoneRows(_ timezones: [Int: Int], totalCommits: Int) -> String {
+        let sorted = timezones.keys.sorted()
+        return sorted.map { offset -> String in
+            let commits = timezones[offset] ?? 0
+            let percent = totalCommits > 0 ? (Double(commits) / Double(totalCommits) * 100) : 0
+            return """
+            <tr>
+                <td>\(escapeHTML(formatTimezoneOffset(offset)))</td>
+                <td>\(commits.formatted())</td>
+                <td>\(String(format: "%.2f", percent))%</td>
+            </tr>
+            """
+        }.joined(separator: "\n")
+    }
+
+    private static func generateTagRows(tags: [TagStats]) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        let sorted = tags.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+        return sorted.map { tag in
+            let date = tag.date.map { formatter.string(from: $0) } ?? "N/A"
+            let authors = tag.authors.sorted { lhs, rhs in lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value }
+                .map { "\(escapeHTML($0.key)) (\($0.value))" }
+                .joined(separator: ", ")
+            return """
+            <tr>
+                <td>\(escapeHTML(tag.name))</td>
+                <td>\(date)</td>
+                <td>\(tag.commits.formatted())</td>
+                <td>\(escapeHTML(authors))</td>
             </tr>
             """
         }.joined(separator: "\n")

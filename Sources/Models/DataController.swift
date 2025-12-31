@@ -21,6 +21,8 @@ class DataController: Observable {
                 fatalError("Failed to create ModelContainer: \(error)")
             }
         }
+
+        resetStuckProjects()
     }
 
     private static func makeContainer(schema: Schema, storeURL: URL) throws -> ModelContainer {
@@ -77,5 +79,21 @@ class DataController: Observable {
     func updateProject(_ project: Project) {
         project.save()
         try? context.save()
+    }
+
+    private func resetStuckProjects() {
+        let descriptor = FetchDescriptor<Project>()
+        guard let all = try? context.fetch(descriptor) else { return }
+        var changed = false
+        for project in all where project.isGeneratingStats {
+            project.isGeneratingStats = false
+            project.progressStage = "idle"
+            project.progressProcessed = 0
+            project.progressTotal = 0
+            changed = true
+        }
+        if changed {
+            try? context.save()
+        }
     }
 }

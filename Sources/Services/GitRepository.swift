@@ -7,6 +7,7 @@ struct GitCommit {
     let authorName: String
     let authorEmail: String
     let authorDate: Date
+    let authorTimeZoneOffsetMinutes: Int?
     let committerName: String
     let committerEmail: String
     let committerDate: Date
@@ -23,6 +24,12 @@ struct GitTreeEntry {
 struct GitTree {
     let hash: String
     let entries: [GitTreeEntry]
+}
+
+struct GitTag {
+    let name: String
+    let commitHash: String
+    let date: Date?
 }
 
 enum FileChangeKind: String {
@@ -87,6 +94,19 @@ class GitRepository {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private func parseTimezoneOffsetMinutes(_ isoString: String) -> Int? {
+        if isoString.hasSuffix("Z") {
+            return 0
+        }
+        guard isoString.count >= 6 else { return nil }
+        let suffix = isoString.suffix(6)
+        guard let sign = suffix.first, sign == "+" || sign == "-" else { return nil }
+        let parts = suffix.dropFirst().split(separator: ":")
+        guard parts.count == 2, let hours = Int(parts[0]), let minutes = Int(parts[1]) else { return nil }
+        let total = hours * 60 + minutes
+        return sign == "-" ? -total : total
+    }
+
     var isValid: Bool {
         runGit(["rev-parse", "--is-inside-work-tree"]).status == 0
     }
@@ -100,19 +120,20 @@ class GitRepository {
     }
 
     func parseCommit(hash: String) -> GitCommit? {
-        let format = "%H%x01%T%x01%P%x01%an%x01%ae%x01%at%x01%cn%x01%ce%x01%ct%x01%s%x02"
+        let format = "%H%x01%T%x01%P%x01%an%x01%ae%x01%at%x01%aI%x01%cn%x01%ce%x01%ct%x01%cI%x01%s%x02"
         let result = runGit(["show", "-s", "--format=\(format)", hash])
         guard result.status == 0 else { return nil }
 
         let output = String(decoding: result.data, as: UTF8.self)
         guard let payload = output.split(separator: "\u{02}", maxSplits: 1).first else { return nil }
-        let parts = payload.split(separator: "\u{01}", maxSplits: 9, omittingEmptySubsequences: false)
-        guard parts.count >= 10 else { return nil }
+        let parts = payload.split(separator: "\u{01}", maxSplits: 11, omittingEmptySubsequences: false)
+        guard parts.count >= 12 else { return nil }
 
         let parents = parts[2].isEmpty ? [] : parts[2].split(separator: " ").map(String.init)
         let authorDate = Date(timeIntervalSince1970: TimeInterval(String(parts[5])) ?? 0)
-        let committerDate = Date(timeIntervalSince1970: TimeInterval(String(parts[8])) ?? 0)
-        let message = String(parts[9]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let authorISO = String(parts[6])
+        let committerDate = Date(timeIntervalSince1970: TimeInterval(String(parts[9])) ?? 0)
+        let message = String(parts[11]).trimmingCharacters(in: .whitespacesAndNewlines)
 
         return GitCommit(
             hash: String(parts[0]),
@@ -121,8 +142,9 @@ class GitRepository {
             authorName: String(parts[3]),
             authorEmail: String(parts[4]),
             authorDate: authorDate,
-            committerName: String(parts[6]),
-            committerEmail: String(parts[7]),
+            authorTimeZoneOffsetMinutes: parseTimezoneOffsetMinutes(authorISO),
+            committerName: String(parts[7]),
+            committerEmail: String(parts[8]),
             committerDate: committerDate,
             message: message
         )
@@ -198,7 +220,7 @@ class GitRepository {
             "--no-color",
             "--date=unix",
             "--numstat",
-            "--format=%H%x01%T%x01%P%x01%an%x01%ae%x01%at%x01%cn%x01%ce%x01%ct%x01%s%x02"
+            "--format=%H%x01%T%x01%P%x01%an%x01%ae%x01%at%x01%aI%x01%cn%x01%ce%x01%ct%x01%cI%x01%s%x02"
         ]
 
         if let since = since {
@@ -227,7 +249,7 @@ class GitRepository {
 
                 let header = line.replacingOccurrences(of: "\u{02}", with: "")
                 let parts = header.split(separator: "\u{01}", omittingEmptySubsequences: false)
-                guard parts.count >= 10 else { continue }
+                guard parts.count >= 12 else { continue }
 
                 let hash = String(parts[0])
                 let tree = String(parts[1])
@@ -235,10 +257,11 @@ class GitRepository {
                 let authorName = String(parts[3])
                 let authorEmail = String(parts[4])
                 let authorDateStr = String(parts[5])
-                let committerName = String(parts[6])
-                let committerEmail = String(parts[7])
-                let committerDateStr = String(parts[8])
-                let message = String(parts[9])
+                let authorISO = String(parts[6])
+                let committerName = String(parts[7])
+                let committerEmail = String(parts[8])
+                let committerDateStr = String(parts[9])
+                let message = String(parts[11])
 
                 let authorDate = Date(timeIntervalSince1970: TimeInterval(authorDateStr) ?? 0)
                 let committerDate = Date(timeIntervalSince1970: TimeInterval(committerDateStr) ?? authorDate.timeIntervalSince1970)
@@ -250,6 +273,7 @@ class GitRepository {
                     authorName: authorName,
                     authorEmail: authorEmail,
                     authorDate: authorDate,
+                    authorTimeZoneOffsetMinutes: parseTimezoneOffsetMinutes(authorISO),
                     committerName: committerName,
                     committerEmail: committerEmail,
                     committerDate: committerDate,
@@ -288,7 +312,7 @@ class GitRepository {
             "--no-decorate",
             "--no-color",
             "--date=unix",
-            "--format=%H%x01%T%x01%P%x01%an%x01%ae%x01%at%x01%cn%x01%ce%x01%ct%x01%s%x02"
+            "--format=%H%x01%T%x01%P%x01%an%x01%ae%x01%at%x01%aI%x01%cn%x01%ce%x01%ct%x01%cI%x01%s%x02"
         ])
 
         guard result.status == 0 else { return [] }
@@ -301,11 +325,12 @@ class GitRepository {
         for (idx, line) in lines.enumerated() {
             let header = line.replacingOccurrences(of: "\u{02}", with: "")
             let parts = header.split(separator: "\u{01}", omittingEmptySubsequences: false)
-            guard parts.count >= 10 else { continue }
+            guard parts.count >= 12 else { continue }
 
             let parents = parts[2].isEmpty ? [] : parts[2].split(separator: " ").map(String.init)
             let authorDate = Date(timeIntervalSince1970: TimeInterval(String(parts[5])) ?? 0)
-            let committerDate = Date(timeIntervalSince1970: TimeInterval(String(parts[8])) ?? authorDate.timeIntervalSince1970)
+            let authorISO = String(parts[6])
+            let committerDate = Date(timeIntervalSince1970: TimeInterval(String(parts[9])) ?? authorDate.timeIntervalSince1970)
 
             let commit = GitCommit(
                 hash: String(parts[0]),
@@ -314,10 +339,11 @@ class GitRepository {
                 authorName: String(parts[3]),
                 authorEmail: String(parts[4]),
                 authorDate: authorDate,
-                committerName: String(parts[6]),
-                committerEmail: String(parts[7]),
+                authorTimeZoneOffsetMinutes: parseTimezoneOffsetMinutes(authorISO),
+                committerName: String(parts[7]),
+                committerEmail: String(parts[8]),
                 committerDate: committerDate,
-                message: String(parts[9])
+                message: String(parts[11])
             )
             commits.append(commit)
 
@@ -327,6 +353,73 @@ class GitRepository {
         }
 
         return commits
+    }
+
+    func getTags() -> [GitTag] {
+        let format = "%(refname:short)%09%(creatordate:unix)%09%(objectname)"
+        let result = runGit([
+            "for-each-ref",
+            "--sort=creatordate",
+            "--format=\(format)",
+            "refs/tags"
+        ])
+
+        guard result.status == 0 else { return [] }
+
+        let raw = String(decoding: result.data, as: UTF8.self)
+        let normalized = raw.replacingOccurrences(of: "%x01", with: "\t").replacingOccurrences(of: "%09", with: "\t")
+        let lines = normalized.split(whereSeparator: \.isNewline)
+
+        var tags: [GitTag] = []
+
+        for line in lines {
+            let parts = line.split(separator: "\t", omittingEmptySubsequences: false)
+            guard !parts.isEmpty else { continue }
+            let name = String(parts[0])
+            let dateStr = parts.count > 1 ? String(parts[1]) : ""
+            let commitHash = parts.count > 2 ? String(parts[2]) : name
+            let date: Date?
+            if let ts = TimeInterval(dateStr) {
+                date = Date(timeIntervalSince1970: ts)
+            } else {
+                // 如果 creatordate 不可用，使用 tag 所指向提交的日期作为替代
+                let dateResult = runGit(["log", "-1", "--format=%ct", name])
+                if dateResult.status == 0, let ts = TimeInterval(String(decoding: dateResult.data, as: UTF8.self)) {
+                    date = Date(timeIntervalSince1970: ts)
+                } else {
+                    date = nil
+                }
+            }
+            tags.append(GitTag(name: name, commitHash: commitHash, date: date))
+        }
+
+        return tags
+    }
+
+    func getCommitHashes(forTag tag: String) -> [String] {
+        let result = runGit(["rev-list", tag])
+        guard result.status == 0 else { return [] }
+        return String(decoding: result.data, as: UTF8.self)
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+    }
+
+    func getShortlogBetween(tag: String, previousTag: String?) -> [(author: String, commits: Int)] {
+        var args = ["shortlog", "-s", tag]
+        if let prev = previousTag {
+            args.append("^\(prev)")
+        }
+        let result = runGit(args)
+        guard result.status == 0 else { return [] }
+
+        let lines = String(decoding: result.data, as: UTF8.self).split(whereSeparator: \.isNewline)
+        var entries: [(String, Int)] = []
+        for line in lines {
+            let parts = line.split(maxSplits: 1, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
+            guard parts.count == 2, let count = Int(parts[0]) else { continue }
+            entries.append((String(parts[1]), count))
+        }
+        return entries
     }
 
     func getDiffStats(oldTreeHash: String?, newTreeHash: String) -> (added: Int, removed: Int, filesChanged: Int) {
@@ -372,9 +465,9 @@ class GitRepository {
         return (added, removed, perFile.count, perFile)
     }
 
-    func calculateSnapshotStats(treeHash: String) -> (files: Int, lines: Int, extensions: [String: (files: Int, lines: Int)]) {
+    func calculateSnapshotStats(treeHash: String) -> (files: Int, lines: Int, extensions: [String: (files: Int, lines: Int)], size: Int) {
         let lsResult = runGit(["ls-tree", "-r", "-z", treeHash])
-        guard lsResult.status == 0 else { return (0, 0, [:]) }
+        guard lsResult.status == 0 else { return (0, 0, [:], 0) }
 
         let entries = lsResult.data.split(separator: 0)
         var blobs: [(hash: String, path: String)] = []
@@ -391,7 +484,7 @@ class GitRepository {
             blobs.append((hash, path))
         }
 
-        guard !blobs.isEmpty else { return (0, 0, [:]) }
+        guard !blobs.isEmpty else { return (0, 0, [:], 0) }
 
         let batchProcess = Process()
         batchProcess.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -407,7 +500,7 @@ class GitRepository {
         do {
             try batchProcess.run()
         } catch {
-            return (blobs.count, 0, [:])
+            return (blobs.count, 0, [:], 0)
         }
 
         let request = blobs.map { "\($0.hash)\n" }.joined()
@@ -421,6 +514,7 @@ class GitRepository {
 
         var offset = batchData.startIndex
         var totalLines = 0
+        var totalSize = 0
         var extensions: [String: (files: Int, lines: Int)] = [:]
 
         for entry in blobs {
@@ -439,6 +533,7 @@ class GitRepository {
                 offset = batchData.index(after: offset)
             }
 
+            totalSize += size
             let lineCount = content.reduce(0) { $0 + ($1 == 0x0a ? 1 : 0) }
             totalLines += lineCount
 
@@ -450,6 +545,6 @@ class GitRepository {
             extensions[key] = stats
         }
 
-        return (blobs.count, totalLines, extensions)
+        return (blobs.count, totalLines, extensions, totalSize)
     }
 }

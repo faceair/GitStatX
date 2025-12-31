@@ -37,6 +37,19 @@ struct ReportView: View {
             loadCachedReportIfAvailable()
             Task { await ensureFreshReport() }
         }
+        .onChange(of: project.isGeneratingStats) { generating in
+            isGeneratingStats = generating
+            if !generating {
+                syncProgressFromProject()
+                refreshReportView()
+            }
+        }
+        .onChange(of: project.progressStage) { _ in
+            syncProgressFromProject()
+        }
+        .onChange(of: project.lastGeneratedCommit) { _ in
+            refreshReportView()
+        }
     }
     
     private func generateStats() async {
@@ -64,6 +77,22 @@ struct ReportView: View {
             }
             isGeneratingStats = false
         })
+    }
+
+    private func refreshReportView() {
+        guard project.statsExists else {
+            statsPath = nil
+            return
+        }
+        let path = project.statsPath
+        if statsPath == path {
+            statsPath = nil
+            DispatchQueue.main.async {
+                statsPath = path
+            }
+        } else {
+            statsPath = path
+        }
     }
 
     private func syncProgressFromProject() {

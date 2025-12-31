@@ -32,6 +32,7 @@ class GitStatsEngine {
 
     func generateStats(forceFullRebuild: Bool = false, progress: ((ProgressUpdate) -> Void)? = nil) async throws -> String {
         print("🚀 GitStatsEngine.generateStats() started")
+        let generatedAt = Date()
 
         if !forceFullRebuild,
            let last = project.lastGeneratedCommit,
@@ -57,6 +58,9 @@ class GitStatsEngine {
         }
 
         statsCache = forceFullRebuild ? nil : loadStatsCache()
+        if let cache = statsCache, cache.hasLineBreakdown == false {
+            statsCache = nil
+        }
         let lastCachedCommit = statsCache?.lastCommit ?? project.lastGeneratedCommit
         // 判断是否需要增量处理
         let isIncremental = !forceFullRebuild &&
@@ -111,6 +115,10 @@ class GitStatsEngine {
         var totalCommits = 0
         var totalLinesAdded = 0
         var totalLinesRemoved = 0
+        var linesAddedByYear: [String: Int] = [:]
+        var linesRemovedByYear: [String: Int] = [:]
+        var linesAddedByYearMonth: [String: Int] = [:]
+        var linesRemovedByYearMonth: [String: Int] = [:]
 
         if let cache = statsCache {
             totalCommits = cache.totalCommits
@@ -120,6 +128,10 @@ class GitStatsEngine {
             fileSet = Set(cache.fileSet)
             filesByDate = cache.filesByDate
             locByDate = cache.locByDate
+            linesAddedByYear = cache.linesAddedByYear
+            linesRemovedByYear = cache.linesRemovedByYear
+            linesAddedByYearMonth = cache.linesAddedByYearMonth
+            linesRemovedByYearMonth = cache.linesRemovedByYearMonth
             authorStats = cache.authorStats.mapValues {
                 (name: $0.name, email: $0.email, commits: $0.commits, added: $0.added, removed: $0.removed, firstDate: $0.firstDate, lastDate: $0.lastDate)
             }
@@ -137,6 +149,10 @@ class GitStatsEngine {
             var fileStats: [String: FileAgg] = [:]
             var dailyNetLoc: [String: Int] = [:]
             var firstSeenDayForFile: [String: String] = [:]
+            var linesAddedByYear: [String: Int] = [:]
+            var linesRemovedByYear: [String: Int] = [:]
+            var linesAddedByYearMonth: [String: Int] = [:]
+            var linesRemovedByYearMonth: [String: Int] = [:]
         }
 
         let workerCount = max(1, min(ProcessInfo.processInfo.activeProcessorCount * 2, parsedCommits.count))
@@ -168,6 +184,17 @@ class GitStatsEngine {
                 var stats = partial.authorStats[authorKey]!
                 let commitAdded = entry.numstats.reduce(0) { $0 + $1.added }
                 let commitRemoved = entry.numstats.reduce(0) { $0 + $1.removed }
+                let dateComponents = calendar.dateComponents([.year, .month], from: commit.authorDate)
+                if let year = dateComponents.year {
+                    let yearKey = String(format: "%04d", year)
+                    partial.linesAddedByYear[yearKey, default: 0] += commitAdded
+                    partial.linesRemovedByYear[yearKey, default: 0] += commitRemoved
+                    if let month = dateComponents.month {
+                        let ymKey = String(format: "%04d-%02d", year, month)
+                        partial.linesAddedByYearMonth[ymKey, default: 0] += commitAdded
+                        partial.linesRemovedByYearMonth[ymKey, default: 0] += commitRemoved
+                    }
+                }
                 stats.commits += 1
                 stats.added += commitAdded
                 stats.removed += commitRemoved
@@ -260,6 +287,19 @@ class GitStatsEngine {
                 }
             }
 
+            for (year, added) in partial.linesAddedByYear {
+                linesAddedByYear[year, default: 0] += added
+            }
+            for (year, removed) in partial.linesRemovedByYear {
+                linesRemovedByYear[year, default: 0] += removed
+            }
+            for (period, added) in partial.linesAddedByYearMonth {
+                linesAddedByYearMonth[period, default: 0] += added
+            }
+            for (period, removed) in partial.linesRemovedByYearMonth {
+                linesRemovedByYearMonth[period, default: 0] += removed
+            }
+
             for (day, delta) in partial.dailyNetLoc {
                 dailyNetLoc[day, default: 0] += delta
             }
@@ -328,7 +368,8 @@ class GitStatsEngine {
             snapshot = SnapshotStats(
                 fileCount: snapshotStats.files,
                 lineCount: snapshotStats.lines,
-                extensions: snapshotStats.extensions
+                extensions: snapshotStats.extensions,
+                totalSize: snapshotStats.size
             )
         } else {
             snapshot = nil
@@ -349,7 +390,14 @@ class GitStatsEngine {
             files: fileStats,
             snapshot: snapshot,
             filesByDate: filesByDate,
-            locByDate: locByDate
+            locByDate: locByDate,
+            linesAddedByYear: linesAddedByYear,
+            linesRemovedByYear: linesRemovedByYear,
+            linesAddedByYearMonth: linesAddedByYearMonth,
+            linesRemovedByYearMonth: linesRemovedByYearMonth,
+            generatedAt: generatedAt,
+            commitsByTimezone: Self.calculateTimezone(commits: commits),
+            tags: Self.calculateTags(repository: repository, commits: commits)
         )
         let reportDuration = Date().timeIntervalSince(reportStart)
         let totalDuration = Date().timeIntervalSince(totalStart)
@@ -377,7 +425,12 @@ class GitStatsEngine {
                     lastDate: $0.lastDate
                 )
             },
-            fileStats: fileStats.mapValues { StatsCache.File(commits: $0.commits, added: $0.added, removed: $0.removed) }
+            fileStats: fileStats.mapValues { StatsCache.File(commits: $0.commits, added: $0.added, removed: $0.removed) },
+            linesAddedByYear: linesAddedByYear,
+            linesRemovedByYear: linesRemovedByYear,
+            linesAddedByYearMonth: linesAddedByYearMonth,
+            linesRemovedByYearMonth: linesRemovedByYearMonth,
+            hasLineBreakdown: true
         )
         saveStatsCache(cacheToSave)
 
@@ -393,7 +446,14 @@ class GitStatsEngine {
         files: [String: (commits: Int, added: Int, removed: Int)],
         snapshot: SnapshotStats?,
         filesByDate: [String: Int],
-        locByDate: [String: Int]
+        locByDate: [String: Int],
+        linesAddedByYear: [String: Int],
+        linesRemovedByYear: [String: Int],
+        linesAddedByYearMonth: [String: Int],
+        linesRemovedByYearMonth: [String: Int],
+        generatedAt: Date,
+        commitsByTimezone: [Int: Int],
+        tags: [TagStats]
     ) async throws -> String {
         let statsPath = project.statsPath
         let reportGenerator = HTMLReportGenerator(statsPath: statsPath)
@@ -411,7 +471,14 @@ class GitStatsEngine {
             files: files,
             snapshot: snapshot,
             filesByDate: filesByDate,
-            locByDate: locByDate
+            locByDate: locByDate,
+            linesAddedByYear: linesAddedByYear,
+            linesRemovedByYear: linesRemovedByYear,
+            linesAddedByYearMonth: linesAddedByYearMonth,
+            linesRemovedByYearMonth: linesRemovedByYearMonth,
+            generatedAt: generatedAt,
+            commitsByTimezone: commitsByTimezone,
+            tags: tags
         )
 
         return statsPath
@@ -440,6 +507,48 @@ class GitStatsEngine {
         } catch {
             print("⚠️ Failed to save stats cache: \(error)")
         }
+    }
+
+    private static func calculateTimezone(commits: [GitCommit]) -> [Int: Int] {
+        var buckets: [Int: Int] = [:]
+        for commit in commits {
+            let offset = commit.authorTimeZoneOffsetMinutes ?? 0
+            buckets[offset, default: 0] += 1
+        }
+        return buckets
+    }
+
+    private static func calculateTags(repository: GitRepository, commits: [GitCommit]) -> [TagStats] {
+        let tags = repository.getTags()
+        guard !tags.isEmpty else { return [] }
+
+        let sorted = tags.sorted { lhs, rhs in
+            switch (lhs.date, rhs.date) {
+            case let (l?, r?):
+                return l < r
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return lhs.name < rhs.name
+            }
+        }
+
+        var result: [TagStats] = []
+        var previousTag: String?
+        for tag in sorted {
+            let shortlog = repository.getShortlogBetween(tag: tag.name, previousTag: previousTag)
+            let commitsForTag = shortlog.reduce(0) { $0 + $1.commits }
+            var authors: [String: Int] = [:]
+            for entry in shortlog {
+                authors[entry.author, default: 0] += entry.commits
+            }
+            result.append(TagStats(name: tag.name, date: tag.date, commits: commitsForTag, authors: authors))
+            previousTag = tag.name
+        }
+
+        return result
     }
 
 }

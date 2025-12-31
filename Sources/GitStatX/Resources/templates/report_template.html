@@ -528,7 +528,7 @@
     <div class="container">
       <section id="summary" class="active">
         <h2>Summary</h2>
-        <p class="muted">Report Period: {{PERIOD_RANGE}}</p>
+        <p class="muted">Report Period: {{PERIOD_RANGE}} • Generated at {{GENERATED_AT}}</p>
         <div class="summary-grid">
           <div class="summary-item">
             <div class="label">Total Commits</div>
@@ -569,6 +569,30 @@
           <div class="summary-item">
             <div class="label">Commits / Day</div>
             <div class="value">{{AVG_PER_DAY}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Active Days %</div>
+            <div class="value">{{ACTIVE_DAYS_PERCENT}}%</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Commits / Author</div>
+            <div class="value">{{AVG_PER_AUTHOR}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Repo Size</div>
+            <div class="value">{{TOTAL_SIZE}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Avg File Size</div>
+            <div class="value">{{AVG_FILE_SIZE}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Tags</div>
+            <div class="value">{{TOTAL_TAGS}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Commits / Tag</div>
+            <div class="value">{{AVG_COMMITS_PER_TAG}}</div>
           </div>
         </div>
       </section>
@@ -619,43 +643,80 @@
             <h3>Hour of Week</h3>
             <div class="heatmap" id="hourWeekGrid"></div>
           </div>
+          <div class="card">
+            <h3>Month of Year</h3>
+            <div class="chart-container"><canvas id="monthOfYearChart"></canvas></div>
+          </div>
+          <div class="card">
+            <h3>Last 32 Weeks</h3>
+            <div class="chart-container"><canvas id="recentWeeksChart"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Commits by Timezone</h3>
+            </div>
+            <div class="chart-container"><canvas id="timezoneChart"></canvas></div>
+          </div>
         </div>
 
-        <div class="grid-2">
-          <div class="card">
-            <div class="card-header">
-              <h3>Commits by Year</h3>
-              <div class="pager" id="commitsByYearPager"></div>
-            </div>
-            <table class="table" id="commitsByYearTable">
-              <thead>
-                <tr>
-                  <th>Year</th>
-                  <th>Commits</th>
-                </tr>
-              </thead>
-              <tbody>
-                {{COMMITS_BY_YEAR_ROWS}}
-              </tbody>
-            </table>
+        <div class="card">
+          <div class="card-header">
+            <h3>Commits by Year</h3>
+            <div class="pager" id="commitsByYearPager"></div>
           </div>
-          <div class="card">
-            <div class="card-header">
-              <h3>Commits by Year/Month</h3>
-              <div class="pager" id="commitsByYearMonthPager"></div>
-            </div>
-            <table class="table" id="commitsByYearMonthTable">
-              <thead>
-                <tr>
-                  <th>Period</th>
-                  <th>Commits</th>
-                </tr>
-              </thead>
-              <tbody>
-                {{COMMITS_BY_YEAR_MONTH_ROWS}}
-              </tbody>
-            </table>
+          <table class="table" id="commitsByYearTable">
+            <thead>
+              <tr>
+                <th>Year</th>
+                <th>Commits</th>
+                <th>Lines Added</th>
+                <th>Lines Removed</th>
+                <th>Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{COMMITS_BY_YEAR_ROWS}}
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>Commits by Year/Month</h3>
+            <div class="pager" id="commitsByYearMonthPager"></div>
           </div>
+          <table class="table" id="commitsByYearMonthTable">
+            <thead>
+              <tr>
+                <th>Period</th>
+                <th>Commits</th>
+                <th>Lines Added</th>
+                <th>Lines Removed</th>
+                <th>Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{COMMITS_BY_YEAR_MONTH_ROWS}}
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>Tags</h3>
+            <div class="pager" id="tagsPager"></div>
+          </div>
+          <table class="table" id="tagsTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Date</th>
+                <th>Commits</th>
+                <th>Authors</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{TAG_ROWS}}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -687,45 +748,44 @@
           </div>
         </div>
 
-        <div class="grid-2">
-          <div class="card">
-            <div class="card-header">
-              <h3>Author of Month</h3>
-              <div class="pager" id="authorOfMonthPager"></div>
-            </div>
-            <table class="table" id="authorOfMonthTable">
-              <thead>
-                <tr>
-                  <th>Month</th>
-                  <th>Top</th>
-                  <th>Commits</th>
-                  <th>Next</th>
-                </tr>
-              </thead>
-              <tbody>
-                {{AUTHOR_OF_MONTH_ROWS}}
-              </tbody>
-            </table>
+        <div class="card">
+          <div class="card-header">
+            <h3>Author of Month</h3>
+            <div class="pager" id="authorOfMonthPager"></div>
           </div>
-          <div class="card">
-            <div class="card-header">
-              <h3>Author of Year</h3>
-              <div class="pager" id="authorOfYearPager"></div>
-            </div>
-            <table class="table" id="authorOfYearTable">
-              <thead>
-                <tr>
-                  <th>Year</th>
-                  <th>Top</th>
-                  <th>Commits</th>
-                  <th>Next</th>
-                </tr>
-              </thead>
-              <tbody>
-                {{AUTHOR_OF_YEAR_ROWS}}
-              </tbody>
-            </table>
+          <table class="table" id="authorOfMonthTable">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>Top</th>
+                <th>Commits</th>
+                <th>Next</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{AUTHOR_OF_MONTH_ROWS}}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Author of Year</h3>
+            <div class="pager" id="authorOfYearPager"></div>
           </div>
+          <table class="table" id="authorOfYearTable">
+            <thead>
+              <tr>
+                <th>Year</th>
+                <th>Top</th>
+                <th>Commits</th>
+                <th>Next</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{AUTHOR_OF_YEAR_ROWS}}
+            </tbody>
+          </table>
         </div>
 
         <div class="card">
@@ -742,10 +802,14 @@
                 <th data-sort="name">Name</th>
                 <th data-sort="email">Email</th>
                 <th data-sort="commits">Commits</th>
+                <th data-sort="percent">Commit %</th>
                 <th data-sort="added">Lines Added</th>
                 <th data-sort="removed">Lines Removed</th>
                 <th data-sort="firstDate">First Commit</th>
                 <th data-sort="lastDate">Last Commit</th>
+                <th data-sort="age">Age (days)</th>
+                <th data-sort="active">Active Days</th>
+                <th data-sort="rank">Rank</th>
               </tr>
             </thead>
             <tbody id="authorsTableBody">
@@ -757,6 +821,7 @@
 
       <section id="files">
         <h2>Files</h2>
+        <p class="muted">Total Size: {{TOTAL_SIZE}} · Avg File Size: {{AVG_FILE_SIZE}}</p>
         <div class="grid-2">
           <div class="card">
             <h3>Files Over Time</h3>
@@ -781,6 +846,7 @@
                 <th>% of Files</th>
                 <th>Lines</th>
                 <th>% of Lines</th>
+                <th>Lines/File</th>
               </tr>
             </thead>
             <tbody>
@@ -827,6 +893,11 @@
           commitsByWeek: {{COMMITS_BY_WEEK_JSON}},
           commitsByYear: {{COMMITS_BY_YEAR_JSON}},
           commitsByYearMonth: {{COMMITS_BY_YEAR_MONTH_JSON}},
+          commitsByMonthOfYear: {{COMMITS_BY_MONTH_OF_YEAR_JSON}},
+          recentWeeks: {{RECENT_WEEKS_JSON}},
+          timezones: {{TIMEZONE_JSON}},
+          linesByYear: {{LINES_BY_YEAR_JSON}},
+          linesByYearMonth: {{LINES_BY_YEAR_MONTH_JSON}},
           filesByDate: {{FILES_BY_DATE_JSON}},
           locByDate: {{LOC_BY_DATE_JSON}},
           hourOfWeek: {{HOUR_OF_WEEK_JSON}},
@@ -834,7 +905,8 @@
           extensions: {{EXTENSION_JSON}},
           authorOfMonth: {{AUTHOR_OF_MONTH_JSON}},
           authorOfYear: {{AUTHOR_OF_YEAR_JSON}},
-          topAuthors: {{TOP_AUTHORS_JSON}}
+          topAuthors: {{TOP_AUTHORS_JSON}},
+          tags: {{TAGS_JSON}}
       };
 
       const chartColors = {
@@ -941,6 +1013,41 @@
               options: baseBarOptions()
           });
 
+          const monthOfYearLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const monthOfYearEl = document.getElementById('monthOfYearChart');
+          if (monthOfYearEl) {
+              new Chart(monthOfYearEl, {
+                  type: 'bar',
+                  data: {
+                      labels: monthOfYearLabels,
+                      datasets: [{
+                          label: 'Commits',
+                          data: data.commitsByMonthOfYear,
+                          backgroundColor: chartColors.secondary
+                      }]
+                  },
+                  options: baseBarOptions()
+              });
+          }
+
+          const recentWeeksEl = document.getElementById('recentWeeksChart');
+          if (recentWeeksEl && data.recentWeeks && data.recentWeeks.length) {
+              const weekLabels = data.recentWeeks.map(w => w.label);
+              const weekValues = data.recentWeeks.map(w => w.commits);
+              new Chart(recentWeeksEl, {
+                  type: 'bar',
+                  data: {
+                      labels: weekLabels,
+                      datasets: [{
+                          label: 'Commits',
+                          data: weekValues,
+                          backgroundColor: chartColors.warning
+                      }]
+                  },
+                  options: baseBarOptions()
+              });
+          }
+
           new Chart(document.getElementById('topAuthorsChart'), {
               type: 'horizontalBar' in Chart.defaults ? 'horizontalBar' : 'bar',
               data: {
@@ -984,6 +1091,24 @@
               },
               options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
           });
+
+          const timezoneEl = document.getElementById('timezoneChart');
+          if (timezoneEl && data.timezones) {
+              const tzLabels = data.timezones.map(t => t.offset);
+              const tzValues = data.timezones.map(t => t.commits);
+              new Chart(timezoneEl, {
+                  type: 'bar',
+                  data: {
+                      labels: tzLabels,
+                      datasets: [{
+                          label: 'Commits',
+                          data: tzValues,
+                          backgroundColor: chartColors.primary
+                      }]
+                  },
+                  options: baseBarOptions()
+              });
+          }
 
           const filesLabels = Object.keys(data.filesByDate || {}).sort();
           if (filesLabels.length) {
@@ -1053,10 +1178,11 @@
           tablePaginators['commitsByYearMonthTable'] = setupPaginatedTable({ tableId: 'commitsByYearMonthTable', pagerId: 'commitsByYearMonthPager', pageSize: 12 });
           tablePaginators['authorOfMonthTable'] = setupPaginatedTable({ tableId: 'authorOfMonthTable', pagerId: 'authorOfMonthPager', pageSize: 12, reverse: true });
           tablePaginators['authorOfYearTable'] = setupPaginatedTable({ tableId: 'authorOfYearTable', pagerId: 'authorOfYearPager', pageSize: 10, reverse: true });
-          tablePaginators['authorsTable'] = setupPaginatedTable({ tableId: 'authorsTable', pagerId: 'authorsPager', pageSize: 25 });
-          tablePaginators['domainsTable'] = setupPaginatedTable({ tableId: 'domainsTable', pagerId: 'domainsPager', pageSize: 15 });
+          tablePaginators['authorsTable'] = setupPaginatedTable({ tableId: 'authorsTable', pagerId: 'authorsPager', pageSize: 10 });
+          tablePaginators['domainsTable'] = setupPaginatedTable({ tableId: 'domainsTable', pagerId: 'domainsPager', pageSize: 10 });
+          tablePaginators['tagsTable'] = setupPaginatedTable({ tableId: 'tagsTable', pagerId: 'tagsPager', pageSize: 10 });
           tablePaginators['extensionsTable'] = setupPaginatedTable({ tableId: 'extensionsTable', pagerId: 'extensionsPager', pageSize: 10 });
-          tablePaginators['filesTable'] = setupPaginatedTable({ tableId: 'filesTable', pagerId: 'filesPager', pageSize: 20 });
+          tablePaginators['filesTable'] = setupPaginatedTable({ tableId: 'filesTable', pagerId: 'filesPager', pageSize: 10 });
       }
 
       function setupPaginatedTable({ tableId, pagerId, pageSize = 10, reverse = false }) {
@@ -1165,18 +1291,15 @@
           table.querySelectorAll('th').forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
           th.classList.add(`sorted-${next}`);
 
-          const colIndex = {
-              name: 0, email: 1, commits: 2, added: 3, removed: 4, firstDate: 5, lastDate: 6,
-              hash: 0, author: 1, date: 2, message: 3, path: 0
-          }[key];
+          const colIndex = Array.from(th.parentNode.children).indexOf(th);
 
           rows.sort((a, b) => {
               const aText = a.children[colIndex].textContent.trim();
               const bText = b.children[colIndex].textContent.trim();
-              const numeric = ['commits','added','removed'].includes(key);
+              const numeric = ['commits','added','removed','percent','age','active','rank'].includes(key);
               if (numeric) {
-                  const aNum = parseInt(aText.replace(/,/g, '')) || 0;
-                  const bNum = parseInt(bText.replace(/,/g, '')) || 0;
+                  const aNum = parseFloat(aText.replace(/[^0-9.-]/g, '')) || 0;
+                  const bNum = parseFloat(bText.replace(/[^0-9.-]/g, '')) || 0;
                   return next === 'asc' ? aNum - bNum : bNum - aNum;
               }
               return next === 'asc' ? aText.localeCompare(bText) : bText.localeCompare(aText);
@@ -1190,7 +1313,7 @@
       }
 
       function initSearch() {
-          setupSearch('authorSearch', 'authorsTable', [0,1,3], tablePaginators['authorsTable']);
+          setupSearch('authorSearch', 'authorsTable', [0,1,2,4], tablePaginators['authorsTable']);
           setupSearch('fileSearch', 'filesTable', [0], tablePaginators['filesTable']);
       }
 
