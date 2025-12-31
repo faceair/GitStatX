@@ -1,852 +1,1213 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{PROJECT_NAME}} - GitStatX Report</title>
     <style>
-        :root {
-            --bg: #f7f7f7;
-            --card: #ffffff;
-            --border: #e5e7eb;
-            --text: #111827;
-            --muted: #6b7280;
-            --accent: #2563eb;
-        }
+      :root {
+        --bg: #f7f7f7;
+        --card: #ffffff;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --accent: #2563eb;
+      }
 
-        * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+      }
 
-        body {
-            margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            line-height: 1.5;
-        }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+      }
 
-        a { color: var(--accent); text-decoration: none; }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
 
-        .topbar {
-            background: #111827;
-            color: #f9fafb;
-            padding: 16px 24px;
-        }
+      .topbar {
+        background: #111827;
+        color: #f9fafb;
+        padding: 16px 24px;
+      }
 
-        .topbar h1 {
-            margin: 0;
-            font-size: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
+      .topbar h1 {
+        margin: 0;
+        font-size: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
 
-        .tabs {
-            margin-top: 10px;
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
+      .tabs {
+        margin-top: 10px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
 
-        .tab-btn {
-            background: rgba(255,255,255,0.08);
-            color: #e5e7eb;
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 6px;
-            padding: 6px 12px;
-            cursor: pointer;
-            font-size: 13px;
-        }
+      .tab-btn {
+        background: rgba(255, 255, 255, 0.08);
+        color: #e5e7eb;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        padding: 6px 12px;
+        cursor: pointer;
+        font-size: 13px;
+      }
 
-        .tab-btn.active {
-            background: #2563eb;
-            border-color: #2563eb;
-            color: #fff;
-        }
+      .tab-btn.active {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #fff;
+      }
 
-        .container {
-            max-width: 1400px;
-            margin: 24px auto 48px;
-            padding: 0 20px;
-        }
+      .container {
+        max-width: 1400px;
+        margin: 24px auto 48px;
+        padding: 0 20px;
+      }
 
-        section {
-            margin-bottom: 36px;
-            display: none;
-        }
+      section {
+        margin-bottom: 36px;
+        display: none;
+      }
 
-        section.active {
-            display: block;
-        }
+      section.active {
+        display: block;
+      }
 
-        h2 {
-            margin: 0 0 12px;
-            font-size: 22px;
-        }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 22px;
+      }
 
-        h3 {
-            margin: 0 0 10px;
-            font-size: 18px;
-        }
+      h3 {
+        margin: 0 0 10px;
+        font-size: 18px;
+      }
 
-        .card {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 16px 18px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-            margin-bottom: 16px;
-        }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px 18px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        margin-bottom: 16px;
+      }
 
-        .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 12px;
-        }
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+      }
 
-        .summary-item {
-            padding: 12px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            background: #fff;
-        }
+      .summary-item {
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #fff;
+      }
 
-        .summary-item .label {
-            color: var(--muted);
-            font-size: 13px;
-        }
+      .summary-item .label {
+        color: var(--muted);
+        font-size: 13px;
+      }
 
-        .summary-item .value {
-            font-size: 20px;
-            font-weight: 700;
-            margin-top: 4px;
-        }
+      .summary-item .value {
+        font-size: 20px;
+        font-weight: 700;
+        margin-top: 4px;
+      }
 
-        .table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-        }
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
 
-        .table th,
-        .table td {
-            padding: 10px 12px;
-            border-bottom: 1px solid var(--border);
-            text-align: left;
-        }
+      .table th,
+      .table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+      }
 
-        .table th {
-            background: #f3f4f6;
-            color: var(--muted);
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-            cursor: pointer;
-        }
+      .table th {
+        background: #f3f4f6;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        cursor: pointer;
+      }
 
-        .table th.sorted-asc::after { content: " ↑"; }
-        .table th.sorted-desc::after { content: " ↓"; }
+      .table th.sorted-asc::after {
+        content: ' ↑';
+      }
+      .table th.sorted-desc::after {
+        content: ' ↓';
+      }
 
-        .muted {
-            color: var(--muted);
-            font-size: 14px;
-        }
+      .muted {
+        color: var(--muted);
+        font-size: 14px;
+      }
 
-        .grid-2 {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-            gap: 16px;
-        }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+        gap: 16px;
+      }
 
-        .chart-container {
-            position: relative;
-            height: 280px;
-        }
+      .chart-container {
+        position: relative;
+        height: 280px;
+      }
 
-        .heatmap {
-            overflow-x: auto;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-        }
+      .heatmap {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
 
-        .heatmap-row {
-            display: grid;
-            grid-template-columns: repeat(25, 1fr);
-        }
+      .heatmap-row {
+        display: grid;
+        grid-template-columns: repeat(25, 1fr);
+      }
 
-        .heatmap-cell {
-            padding: 6px;
-            text-align: center;
-            border: 1px solid var(--border);
-            font-size: 12px;
-        }
+      .heatmap-cell {
+        padding: 6px;
+        text-align: center;
+        border: 1px solid var(--border);
+        font-size: 12px;
+      }
 
-        .heatmap-cell.label { background: #f3f4f6; font-weight: 600; }
-        .heatmap-cell.level-0 { background: #f8fafc; }
-        .heatmap-cell.level-1 { background: #e0f2fe; }
-        .heatmap-cell.level-2 { background: #bae6fd; }
-        .heatmap-cell.level-3 { background: #7dd3fc; }
-        .heatmap-cell.level-4 { background: #38bdf8; }
+      .heatmap-cell.label {
+        background: #f3f4f6;
+        font-weight: 600;
+      }
+      .heatmap-cell.level-0 {
+        background: #f8fafc;
+      }
+      .heatmap-cell.level-1 {
+        background: #e0f2fe;
+      }
+      .heatmap-cell.level-2 {
+        background: #bae6fd;
+      }
+      .heatmap-cell.level-3 {
+        background: #7dd3fc;
+      }
+      .heatmap-cell.level-4 {
+        background: #38bdf8;
+      }
 
-        .calendar-wrap {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-        }
+      .calendar-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
 
-        .calendar {
-            --cell: 10px;
-            --gap: 2px;
-            display: grid;
-            grid-template-rows: repeat(7, var(--cell));
-            grid-auto-flow: column;
-            grid-auto-columns: var(--cell);
-            gap: var(--gap);
-            overflow-x: auto;
-            padding-bottom: 6px;
-            align-items: start;
-            justify-content: center;
-            justify-items: center;
-        }
+      .calendar {
+        --cell: 10px;
+        --gap: 2px;
+        display: grid;
+        grid-template-rows: repeat(7, var(--cell));
+        grid-auto-flow: column;
+        grid-auto-columns: var(--cell);
+        gap: var(--gap);
+        overflow-x: auto;
+        padding-bottom: 6px;
+        align-items: start;
+        justify-content: center;
+        justify-items: center;
+      }
 
-        .calendar .day {
-            width: var(--cell);
-            height: var(--cell);
-            border-radius: calc(var(--cell) / 3);
-            background: #e5e7eb;
-            flex-shrink: 0;
-        }
+      .calendar .day {
+        width: var(--cell);
+        height: var(--cell);
+        border-radius: calc(var(--cell) / 3);
+        background: #e5e7eb;
+        flex-shrink: 0;
+      }
 
-        .calendar .day.level-1 { background: #bfdbfe; }
-        .calendar .day.level-2 { background: #60a5fa; }
-        .calendar .day.level-3 { background: #3b82f6; }
-        .calendar .day.level-4 { background: #1d4ed8; }
+      .calendar .day.level-1 {
+        background: #bfdbfe;
+      }
+      .calendar .day.level-2 {
+        background: #60a5fa;
+      }
+      .calendar .day.level-3 {
+        background: #3b82f6;
+      }
+      .calendar .day.level-4 {
+        background: #1d4ed8;
+      }
 
-        .calendar-legend {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            color: var(--muted);
-            font-size: 12px;
-            justify-content: center;
-        }
+      .calendar-legend {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        justify-content: center;
+      }
 
-        .calendar-legend .day {
-            width: 12px;
-            height: 12px;
-            border-radius: 3px;
-            background: #e5e7eb;
-        }
+      .calendar-legend .day {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        background: #e5e7eb;
+      }
 
-        .calendar-legend .day.level-1 { background: #bfdbfe; }
-        .calendar-legend .day.level-2 { background: #60a5fa; }
-        .calendar-legend .day.level-3 { background: #3b82f6; }
-        .calendar-legend .day.level-4 { background: #1d4ed8; }
+      .calendar-legend .day.level-1 {
+        background: #bfdbfe;
+      }
+      .calendar-legend .day.level-2 {
+        background: #60a5fa;
+      }
+      .calendar-legend .day.level-3 {
+        background: #3b82f6;
+      }
+      .calendar-legend .day.level-4 {
+        background: #1d4ed8;
+      }
 
-        .calendar-range {
-            color: var(--muted);
-            font-size: 13px;
-        }
+      .calendar-range {
+        color: var(--muted);
+        font-size: 13px;
+      }
 
-        .calendar-tooltip {
-            position: fixed;
-            background: #111827;
-            color: #f9fafb;
-            padding: 6px 8px;
-            border-radius: 6px;
-            font-size: 12px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-            pointer-events: none;
-            z-index: 9999;
-            display: none;
-            white-space: nowrap;
-        }
+      .calendar-tooltip {
+        position: fixed;
+        background: #111827;
+        color: #f9fafb;
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+        pointer-events: none;
+        z-index: 9999;
+        display: none;
+        white-space: nowrap;
+      }
 
-        .search-box {
-            margin-bottom: 8px;
-        }
+      .search-box {
+        margin-bottom: 8px;
+      }
 
-        .search-box input {
-            width: 320px;
-            padding: 8px 10px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            font-size: 14px;
-        }
+      .search-box input {
+        width: 320px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 14px;
+      }
+
+      .card-header,
+      .table-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .table-toolbar .search-box {
+        margin: 0;
+      }
+
+      .pager {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .pager.compact {
+        font-size: 14px;
+      }
+
+      .pager-btn {
+        border: 1px solid var(--border);
+        background: #f9fafb;
+        color: var(--text);
+        padding: 6px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        line-height: 1;
+      }
+
+      .pager-btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .pager-info {
+        font-weight: 600;
+        color: var(--text);
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="topbar">
-        <h1>GitStatX – {{PROJECT_NAME}}</h1>
-        <div class="tabs">
-            <button class="tab-btn active" data-tab="summary">Summary</button>
-            <button class="tab-btn" data-tab="activity">Activity</button>
-            <button class="tab-btn" data-tab="authors">Authors</button>
-            <button class="tab-btn" data-tab="files">Files</button>
-        </div>
+      <h1>GitStatX – {{PROJECT_NAME}}</h1>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="summary">Summary</button>
+        <button class="tab-btn" data-tab="activity">Activity</button>
+        <button class="tab-btn" data-tab="authors">Authors</button>
+        <button class="tab-btn" data-tab="files">Files</button>
+      </div>
     </div>
 
     <div class="container">
-        <section id="summary" class="active">
-            <h2>Summary</h2>
-            <p class="muted">Report Period: {{PERIOD_RANGE}}</p>
-            <div class="summary-grid">
-                <div class="summary-item"><div class="label">Total Commits</div><div class="value">{{TOTAL_COMMITS}}</div></div>
-                <div class="summary-item"><div class="label">Authors</div><div class="value">{{TOTAL_AUTHORS}}</div></div>
-                <div class="summary-item"><div class="label">Files</div><div class="value">{{TOTAL_FILES}}</div></div>
-                <div class="summary-item"><div class="label">Lines of Code</div><div class="value">{{TOTAL_LOC}}</div></div>
-                <div class="summary-item"><div class="label">Lines Added</div><div class="value">{{TOTAL_ADDED}}</div></div>
-                <div class="summary-item"><div class="label">Lines Removed</div><div class="value">{{TOTAL_REMOVED}}</div></div>
-                <div class="summary-item"><div class="label">Active Days</div><div class="value">{{ACTIVE_DAYS}}</div></div>
-                <div class="summary-item"><div class="label">Project Age (days)</div><div class="value">{{AGE_DAYS}}</div></div>
-                <div class="summary-item"><div class="label">Commits / Active Day</div><div class="value">{{AVG_PER_ACTIVE_DAY}}</div></div>
-                <div class="summary-item"><div class="label">Commits / Day</div><div class="value">{{AVG_PER_DAY}}</div></div>
-            </div>
-        </section>
+      <section id="summary" class="active">
+        <h2>Summary</h2>
+        <p class="muted">Report Period: {{PERIOD_RANGE}}</p>
+        <div class="summary-grid">
+          <div class="summary-item">
+            <div class="label">Total Commits</div>
+            <div class="value">{{TOTAL_COMMITS}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Authors</div>
+            <div class="value">{{TOTAL_AUTHORS}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Files</div>
+            <div class="value">{{TOTAL_FILES}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Lines of Code</div>
+            <div class="value">{{TOTAL_LOC}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Lines Added</div>
+            <div class="value">{{TOTAL_ADDED}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Lines Removed</div>
+            <div class="value">{{TOTAL_REMOVED}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Active Days</div>
+            <div class="value">{{ACTIVE_DAYS}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Project Age (days)</div>
+            <div class="value">{{AGE_DAYS}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Commits / Active Day</div>
+            <div class="value">{{AVG_PER_ACTIVE_DAY}}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Commits / Day</div>
+            <div class="value">{{AVG_PER_DAY}}</div>
+          </div>
+        </div>
+      </section>
 
-        <section id="activity">
-            <h2>Activity</h2>
-            <div class="grid-2">
-                <div class="card">
-                    <h3>Commits by Month</h3>
-                    <div class="chart-container"><canvas id="monthlyChart"></canvas></div>
-                </div>
-                <div class="card">
-                    <h3>Commits by Week</h3>
-                    <div class="chart-container"><canvas id="weeklyChart"></canvas></div>
-                </div>
-                <div class="card">
-                    <h3>Commits by Year</h3>
-                    <div class="chart-container"><canvas id="yearlyChart"></canvas></div>
-                </div>
-                <div class="card">
-                    <h3>Hour of Day</h3>
-                    <div class="chart-container"><canvas id="hourlyChart"></canvas></div>
-                </div>
-                <div class="card">
-                    <h3>Day of Week</h3>
-                    <div class="chart-container"><canvas id="dailyChart"></canvas></div>
-                </div>
-                <div class="card">
-                    <h3>Hour of Week</h3>
-                    <div class="heatmap" id="hourWeekGrid"></div>
-                </div>
-            </div>
+      <section id="activity">
+        <h2>Activity</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Commits by Month</h3>
+            <div class="chart-container"><canvas id="monthlyChart"></canvas></div>
+          </div>
+          <div class="card">
+            <h3>Commits by Week</h3>
+            <div class="chart-container"><canvas id="weeklyChart"></canvas></div>
+          </div>
+          <div class="card">
+            <h3>Commits by Year</h3>
+            <div class="chart-container"><canvas id="yearlyChart"></canvas></div>
+          </div>
+          <div class="card">
+            <h3>Hour of Day</h3>
+            <div class="chart-container"><canvas id="hourlyChart"></canvas></div>
+          </div>
+          <div class="card">
+            <h3>Day of Week</h3>
+            <div class="chart-container"><canvas id="dailyChart"></canvas></div>
+          </div>
+          <div class="card">
+            <h3>Hour of Week</h3>
+            <div class="heatmap" id="hourWeekGrid"></div>
+          </div>
+        </div>
 
-            <div class="card">
-                <h3>Activity Calendar</h3>
-                <div class="calendar-wrap">
-                    <div class="calendar" id="activityCalendar"></div>
-                    <div class="calendar-legend" id="calendarLegend"></div>
-                    <div class="calendar-range" id="calendarRange"></div>
-                </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>Activity Calendar</h3>
+            <div class="pager compact" id="calendarPager">
+              <button class="pager-btn" id="calendarPrev" aria-label="Previous year">←</button>
+              <div class="pager-info" id="calendarYearLabel"></div>
+              <button class="pager-btn" id="calendarNext" aria-label="Next year">→</button>
             </div>
+          </div>
+          <div class="calendar-wrap">
+            <div class="calendar" id="activityCalendar"></div>
+            <div class="calendar-legend" id="calendarLegend"></div>
+            <div class="calendar-range" id="calendarRange"></div>
+          </div>
+        </div>
 
-            <div class="grid-2">
-                <div class="card">
-                    <h3>Commits by Year</h3>
-                    <table class="table">
-                        <thead><tr><th>Year</th><th>Commits</th></tr></thead>
-                        <tbody>{{COMMITS_BY_YEAR_ROWS}}</tbody>
-                    </table>
-                </div>
-                <div class="card">
-                    <h3>Commits by Year/Month</h3>
-                    <table class="table">
-                        <thead><tr><th>Period</th><th>Commits</th></tr></thead>
-                        <tbody>{{COMMITS_BY_YEAR_MONTH_ROWS}}</tbody>
-                    </table>
-                </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <h3>Commits by Year</h3>
+              <div class="pager" id="commitsByYearPager"></div>
             </div>
-        </section>
-
-        <section id="authors">
-            <h2>Authors</h2>
-            <div class="grid-2">
-                <div class="card">
-                    <h3>Top Authors</h3>
-                    <div class="chart-container"><canvas id="topAuthorsChart"></canvas></div>
-                </div>
-                <div class="card">
-                    <h3>Domains</h3>
-                    <div class="chart-container"><canvas id="domainChart"></canvas></div>
-                    <table class="table">
-                        <thead><tr><th>Domain</th><th>Commits</th><th>%</th></tr></thead>
-                        <tbody>{{DOMAIN_ROWS}}</tbody>
-                    </table>
-                </div>
+            <table class="table" id="commitsByYearTable">
+              <thead>
+                <tr>
+                  <th>Year</th>
+                  <th>Commits</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{COMMITS_BY_YEAR_ROWS}}
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Commits by Year/Month</h3>
+              <div class="pager" id="commitsByYearMonthPager"></div>
             </div>
+            <table class="table" id="commitsByYearMonthTable">
+              <thead>
+                <tr>
+                  <th>Period</th>
+                  <th>Commits</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{COMMITS_BY_YEAR_MONTH_ROWS}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
-            <div class="grid-2">
-                <div class="card">
-                    <h3>Author of Month</h3>
-                    <table class="table">
-                        <thead><tr><th>Month</th><th>Top</th><th>Commits</th><th>Next</th></tr></thead>
-                        <tbody>{{AUTHOR_OF_MONTH_ROWS}}</tbody>
-                    </table>
-                </div>
-                <div class="card">
-                    <h3>Author of Year</h3>
-                    <table class="table">
-                        <thead><tr><th>Year</th><th>Top</th><th>Commits</th><th>Next</th></tr></thead>
-                        <tbody>{{AUTHOR_OF_YEAR_ROWS}}</tbody>
-                    </table>
-                </div>
+      <section id="authors">
+        <h2>Authors</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Top Authors</h3>
+            <div class="chart-container"><canvas id="topAuthorsChart"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Domains</h3>
+              <div class="pager" id="domainsPager"></div>
             </div>
+            <div class="chart-container"><canvas id="domainChart"></canvas></div>
+            <table class="table" id="domainsTable">
+              <thead>
+                <tr>
+                  <th>Domain</th>
+                  <th>Commits</th>
+                  <th>%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{DOMAIN_ROWS}}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-            <div class="card">
-                <h3>All Authors</h3>
-                <div class="search-box"><input type="text" id="authorSearch" placeholder="Search authors..."></div>
-                <table class="table" id="authorsTable">
-                    <thead>
-                        <tr>
-                            <th data-sort="name">Name</th>
-                            <th data-sort="email">Email</th>
-                            <th data-sort="commits">Commits</th>
-                            <th data-sort="added">Lines Added</th>
-                            <th data-sort="removed">Lines Removed</th>
-                            <th data-sort="firstDate">First Commit</th>
-                            <th data-sort="lastDate">Last Commit</th>
-                        </tr>
-                    </thead>
-                    <tbody id="authorsTableBody">{{AUTHOR_ROWS}}</tbody>
-                </table>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <h3>Author of Month</h3>
+              <div class="pager" id="authorOfMonthPager"></div>
             </div>
-        </section>
-
-        <section id="files">
-            <h2>Files</h2>
-            <div class="grid-2">
-                <div class="card">
-                    <h3>Files Over Time</h3>
-                    <div class="chart-container"><canvas id="filesByDateChart"></canvas></div>
-                </div>
-                <div class="card">
-                    <h3>Lines of Code Over Time</h3>
-                    <div class="chart-container"><canvas id="locByDateChart"></canvas></div>
-                </div>
+            <table class="table" id="authorOfMonthTable">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Top</th>
+                  <th>Commits</th>
+                  <th>Next</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{AUTHOR_OF_MONTH_ROWS}}
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Author of Year</h3>
+              <div class="pager" id="authorOfYearPager"></div>
             </div>
+            <table class="table" id="authorOfYearTable">
+              <thead>
+                <tr>
+                  <th>Year</th>
+                  <th>Top</th>
+                  <th>Commits</th>
+                  <th>Next</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{AUTHOR_OF_YEAR_ROWS}}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-            <div class="card">
-                <h3>Extensions</h3>
-                <table class="table">
-                    <thead><tr><th>Extension</th><th>Files</th><th>% of Files</th><th>Lines</th><th>% of Lines</th></tr></thead>
-                    <tbody>{{EXTENSION_ROWS}}</tbody>
-                </table>
-            </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>All Authors</h3>
+          </div>
+          <div class="table-toolbar">
+            <div class="search-box"><input type="text" id="authorSearch" placeholder="Search authors..." /></div>
+            <div class="pager" id="authorsPager"></div>
+          </div>
+          <table class="table" id="authorsTable">
+            <thead>
+              <tr>
+                <th data-sort="name">Name</th>
+                <th data-sort="email">Email</th>
+                <th data-sort="commits">Commits</th>
+                <th data-sort="added">Lines Added</th>
+                <th data-sort="removed">Lines Removed</th>
+                <th data-sort="firstDate">First Commit</th>
+                <th data-sort="lastDate">Last Commit</th>
+              </tr>
+            </thead>
+            <tbody id="authorsTableBody">
+              {{AUTHOR_ROWS}}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-            <div class="card">
-                <h3>Files</h3>
-                <div class="search-box"><input type="text" id="fileSearch" placeholder="Search files..."></div>
-                <table class="table" id="filesTable">
-                    <thead>
-                        <tr>
-                            <th data-sort="path">Path</th>
-                            <th data-sort="commits">Commits</th>
-                            <th data-sort="added">Lines Added</th>
-                            <th data-sort="removed">Lines Removed</th>
-                        </tr>
-                    </thead>
-                    <tbody id="filesTableBody">{{FILE_ROWS}}</tbody>
-                </table>
-            </div>
-        </section>
+      <section id="files">
+        <h2>Files</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Files Over Time</h3>
+            <div class="chart-container"><canvas id="filesByDateChart"></canvas></div>
+          </div>
+          <div class="card">
+            <h3>Lines of Code Over Time</h3>
+            <div class="chart-container"><canvas id="locByDateChart"></canvas></div>
+          </div>
+        </div>
 
+        <div class="card">
+          <div class="card-header">
+            <h3>Extensions</h3>
+            <div class="pager" id="extensionsPager"></div>
+          </div>
+          <table class="table" id="extensionsTable">
+            <thead>
+              <tr>
+                <th>Extension</th>
+                <th>Files</th>
+                <th>% of Files</th>
+                <th>Lines</th>
+                <th>% of Lines</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{EXTENSION_ROWS}}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Files</h3>
+          </div>
+          <div class="table-toolbar">
+            <div class="search-box"><input type="text" id="fileSearch" placeholder="Search files..." /></div>
+            <div class="pager" id="filesPager"></div>
+          </div>
+          <table class="table" id="filesTable">
+            <thead>
+              <tr>
+                <th data-sort="path">Path</th>
+                <th data-sort="commits">Commits</th>
+                <th data-sort="added">Lines Added</th>
+                <th data-sort="removed">Lines Removed</th>
+              </tr>
+            </thead>
+            <tbody id="filesTableBody">
+              {{FILE_ROWS}}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
 
     <script src="Chart.js/chart.min.js"></script>
     <script>
-        const data = {
-            authors: {{AUTHORS_JSON}},
-            commits: {{COMMITS_JSON}},
-            files: {{FILES_JSON}},
-            activityByDate: {{ACTIVITY_BY_DATE_JSON}},
-            activityByHour: {{ACTIVITY_BY_HOUR_JSON}},
-            activityByDay: {{ACTIVITY_BY_DAY_JSON}},
-            commitsByMonth: {{COMMITS_BY_MONTH_JSON}},
-            commitsByWeek: {{COMMITS_BY_WEEK_JSON}},
-            commitsByYear: {{COMMITS_BY_YEAR_JSON}},
-            commitsByYearMonth: {{COMMITS_BY_YEAR_MONTH_JSON}},
-            filesByDate: {{FILES_BY_DATE_JSON}},
-            locByDate: {{LOC_BY_DATE_JSON}},
-            hourOfWeek: {{HOUR_OF_WEEK_JSON}},
-            domains: {{DOMAINS_JSON}},
-            extensions: {{EXTENSION_JSON}},
-            authorOfMonth: {{AUTHOR_OF_MONTH_JSON}},
-            authorOfYear: {{AUTHOR_OF_YEAR_JSON}},
-            topAuthors: {{TOP_AUTHORS_JSON}}
-        };
+      const data = {
+          authors: {{AUTHORS_JSON}},
+          commits: {{COMMITS_JSON}},
+          files: {{FILES_JSON}},
+          activityByDate: {{ACTIVITY_BY_DATE_JSON}},
+          activityByHour: {{ACTIVITY_BY_HOUR_JSON}},
+          activityByDay: {{ACTIVITY_BY_DAY_JSON}},
+          commitsByMonth: {{COMMITS_BY_MONTH_JSON}},
+          commitsByWeek: {{COMMITS_BY_WEEK_JSON}},
+          commitsByYear: {{COMMITS_BY_YEAR_JSON}},
+          commitsByYearMonth: {{COMMITS_BY_YEAR_MONTH_JSON}},
+          filesByDate: {{FILES_BY_DATE_JSON}},
+          locByDate: {{LOC_BY_DATE_JSON}},
+          hourOfWeek: {{HOUR_OF_WEEK_JSON}},
+          domains: {{DOMAINS_JSON}},
+          extensions: {{EXTENSION_JSON}},
+          authorOfMonth: {{AUTHOR_OF_MONTH_JSON}},
+          authorOfYear: {{AUTHOR_OF_YEAR_JSON}},
+          topAuthors: {{TOP_AUTHORS_JSON}}
+      };
 
-        const chartColors = {
-            primary: 'rgba(37, 99, 235, 0.9)',
-            primaryLight: 'rgba(37, 99, 235, 0.2)',
-            secondary: 'rgba(99, 102, 241, 0.9)',
-            secondaryLight: 'rgba(99, 102, 241, 0.2)',
-            success: 'rgba(16, 185, 129, 0.9)',
-            successLight: 'rgba(16, 185, 129, 0.2)',
-            warning: 'rgba(245, 158, 11, 0.9)',
-            warningLight: 'rgba(245, 158, 11, 0.2)',
-            danger: 'rgba(239, 68, 68, 0.9)'
-        };
+      const chartColors = {
+          primary: 'rgba(37, 99, 235, 0.9)',
+          primaryLight: 'rgba(37, 99, 235, 0.2)',
+          secondary: 'rgba(99, 102, 241, 0.9)',
+          secondaryLight: 'rgba(99, 102, 241, 0.2)',
+          success: 'rgba(16, 185, 129, 0.9)',
+          successLight: 'rgba(16, 185, 129, 0.2)',
+          warning: 'rgba(245, 158, 11, 0.9)',
+          warningLight: 'rgba(245, 158, 11, 0.2)',
+          danger: 'rgba(239, 68, 68, 0.9)'
+      };
 
-        const sortStates = {};
-        const tabs = document.querySelectorAll('.tab-btn');
-        tabs.forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
+      const sortStates = {};
+      const tablePaginators = {};
+      const tabs = document.querySelectorAll('.tab-btn');
+      tabs.forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 
-        function showTab(id) {
-            tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === id));
-            document.querySelectorAll('section').forEach(sec => sec.classList.toggle('active', sec.id === id));
-        }
+      function showTab(id) {
+          tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === id));
+          document.querySelectorAll('section').forEach(sec => sec.classList.toggle('active', sec.id === id));
+      }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            initCharts();
-            initSorting();
-            initSearch();
-            initActivityCalendar();
-            renderHourOfWeekGrid();
-        });
+      document.addEventListener('DOMContentLoaded', () => {
+          initCharts();
+          initPagination();
+          initSorting();
+          initSearch();
+          initActivityCalendar();
+          renderHourOfWeekGrid();
+      });
 
-        function initCharts() {
-            const monthLabels = Object.keys(data.commitsByMonth).sort();
-            new Chart(document.getElementById('monthlyChart'), {
-                type: 'line',
-                data: {
-                    labels: monthLabels,
-                    datasets: [{
-                        label: 'Commits',
-                        data: monthLabels.map(m => data.commitsByMonth[m]),
-                        borderColor: chartColors.primary,
-                        backgroundColor: chartColors.primaryLight,
-                        tension: 0.3,
-                        fill: true
-                    }]
-                },
-                options: baseLineOptions()
-            });
+      function initCharts() {
+          const monthLabels = Object.keys(data.commitsByMonth).sort();
+          new Chart(document.getElementById('monthlyChart'), {
+              type: 'line',
+              data: {
+                  labels: monthLabels,
+                  datasets: [{
+                      label: 'Commits',
+                      data: monthLabels.map(m => data.commitsByMonth[m]),
+                      borderColor: chartColors.primary,
+                      backgroundColor: chartColors.primaryLight,
+                      tension: 0.3,
+                      fill: true
+                  }]
+              },
+              options: baseLineOptions()
+          });
 
-            const weekLabels = Object.keys(data.commitsByWeek).sort();
-            new Chart(document.getElementById('weeklyChart'), {
-                type: 'bar',
-                data: {
-                    labels: weekLabels,
-                    datasets: [{
-                        label: 'Commits',
-                        data: weekLabels.map(w => data.commitsByWeek[w]),
-                        backgroundColor: chartColors.warning
-                    }]
-                },
-                options: baseBarOptions()
-            });
+          const weekLabels = Object.keys(data.commitsByWeek).sort();
+          new Chart(document.getElementById('weeklyChart'), {
+              type: 'bar',
+              data: {
+                  labels: weekLabels,
+                  datasets: [{
+                      label: 'Commits',
+                      data: weekLabels.map(w => data.commitsByWeek[w]),
+                      backgroundColor: chartColors.warning
+                  }]
+              },
+              options: baseBarOptions()
+          });
 
-            const yearLabels = Object.keys(data.commitsByYear).sort();
-            new Chart(document.getElementById('yearlyChart'), {
-                type: 'bar',
-                data: {
-                    labels: yearLabels,
-                    datasets: [{
-                        label: 'Commits',
-                        data: yearLabels.map(y => data.commitsByYear[y]),
-                        backgroundColor: chartColors.secondary
-                    }]
-                },
-                options: baseBarOptions()
-            });
+          const yearLabels = Object.keys(data.commitsByYear).sort();
+          new Chart(document.getElementById('yearlyChart'), {
+              type: 'bar',
+              data: {
+                  labels: yearLabels,
+                  datasets: [{
+                      label: 'Commits',
+                      data: yearLabels.map(y => data.commitsByYear[y]),
+                      backgroundColor: chartColors.secondary
+                  }]
+              },
+              options: baseBarOptions()
+          });
 
-            const hourLabels = Array.from({length: 24}, (_, i) => `${i}:00`);
-            new Chart(document.getElementById('hourlyChart'), {
-                type: 'bar',
-                data: {
-                    labels: hourLabels,
-                    datasets: [{
-                        label: 'Commits',
-                        data: data.activityByHour,
-                        backgroundColor: chartColors.primary
-                    }]
-                },
-                options: baseBarOptions()
-            });
+          const hourLabels = Array.from({length: 24}, (_, i) => `${i}:00`);
+          new Chart(document.getElementById('hourlyChart'), {
+              type: 'bar',
+              data: {
+                  labels: hourLabels,
+                  datasets: [{
+                      label: 'Commits',
+                      data: data.activityByHour,
+                      backgroundColor: chartColors.primary
+                  }]
+              },
+              options: baseBarOptions()
+          });
 
-            new Chart(document.getElementById('dailyChart'), {
-                type: 'bar',
-                data: {
-                    labels: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
-                    datasets: [{
-                        label: 'Commits',
-                        data: data.activityByDay,
-                        backgroundColor: chartColors.success
-                    }]
-                },
-                options: baseBarOptions()
-            });
+          new Chart(document.getElementById('dailyChart'), {
+              type: 'bar',
+              data: {
+                  labels: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
+                  datasets: [{
+                      label: 'Commits',
+                      data: data.activityByDay,
+                      backgroundColor: chartColors.success
+                  }]
+              },
+              options: baseBarOptions()
+          });
 
-            new Chart(document.getElementById('topAuthorsChart'), {
-                type: 'horizontalBar' in Chart.defaults ? 'horizontalBar' : 'bar',
-                data: {
-                    labels: data.topAuthors.map(a => a.name),
-                    datasets: [{
-                        label: 'Commits',
-                        data: data.topAuthors.map(a => a.commits),
-                        backgroundColor: chartColors.secondary
-                    }]
-                },
-                options: {
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
-                        y: { grid: { display: false } }
-                    }
-                }
-            });
+          new Chart(document.getElementById('topAuthorsChart'), {
+              type: 'horizontalBar' in Chart.defaults ? 'horizontalBar' : 'bar',
+              data: {
+                  labels: data.topAuthors.map(a => a.name),
+                  datasets: [{
+                      label: 'Commits',
+                      data: data.topAuthors.map(a => a.commits),
+                      backgroundColor: chartColors.secondary
+                  }]
+              },
+              options: {
+                  indexAxis: 'y',
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false } },
+                  scales: {
+                      x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
+                      y: { grid: { display: false } }
+                  }
+              }
+          });
 
-            const domainLabels = data.domains.map(d => d.domain);
-            new Chart(document.getElementById('domainChart'), {
-                type: 'doughnut',
-                data: {
-                    labels: domainLabels,
-                    datasets: [{
-                        label: 'Commits',
-                        data: data.domains.map(d => d.commits),
-                        backgroundColor: [
-                            chartColors.primary,
-                            chartColors.secondary,
-                            chartColors.success,
-                            chartColors.warning,
-                            chartColors.danger,
-                            '#0ea5e9',
-                            '#14b8a6'
-                        ]
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
-            });
+          const domainLabels = data.domains.map(d => d.domain);
+          new Chart(document.getElementById('domainChart'), {
+              type: 'doughnut',
+              data: {
+                  labels: domainLabels,
+                  datasets: [{
+                      label: 'Commits',
+                      data: data.domains.map(d => d.commits),
+                      backgroundColor: [
+                          chartColors.primary,
+                          chartColors.secondary,
+                          chartColors.success,
+                          chartColors.warning,
+                          chartColors.danger,
+                          '#0ea5e9',
+                          '#14b8a6'
+                      ]
+                  }]
+              },
+              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+          });
 
-            const filesLabels = Object.keys(data.filesByDate || {}).sort();
-            if (filesLabels.length) {
-                new Chart(document.getElementById('filesByDateChart'), {
-                    type: 'line',
-                    data: {
-                        labels: filesLabels,
-                        datasets: [{
-                            label: 'Files',
-                            data: filesLabels.map(d => data.filesByDate[d]),
-                            borderColor: chartColors.secondary,
-                            backgroundColor: chartColors.secondaryLight,
-                            tension: 0.3,
-                            fill: true
-                        }]
-                    },
-                    options: baseLineOptions()
-                });
-            }
+          const filesLabels = Object.keys(data.filesByDate || {}).sort();
+          if (filesLabels.length) {
+              new Chart(document.getElementById('filesByDateChart'), {
+                  type: 'line',
+                  data: {
+                      labels: filesLabels,
+                      datasets: [{
+                          label: 'Files',
+                          data: filesLabels.map(d => data.filesByDate[d]),
+                          borderColor: chartColors.secondary,
+                          backgroundColor: chartColors.secondaryLight,
+                          tension: 0.3,
+                          fill: true
+                      }]
+                  },
+                  options: baseLineOptions()
+              });
+          }
 
-            const locLabels = Object.keys(data.locByDate || {}).sort();
-            if (locLabels.length) {
-                new Chart(document.getElementById('locByDateChart'), {
-                    type: 'line',
-                    data: {
-                        labels: locLabels,
-                        datasets: [{
-                            label: 'Lines of Code',
-                            data: locLabels.map(d => data.locByDate[d]),
-                            borderColor: chartColors.primary,
-                            backgroundColor: chartColors.primaryLight,
-                            tension: 0.3,
-                            fill: true
-                        }]
-                    },
-                    options: baseLineOptions()
-                });
-            }
-        }
+          const locLabels = Object.keys(data.locByDate || {}).sort();
+          if (locLabels.length) {
+              new Chart(document.getElementById('locByDateChart'), {
+                  type: 'line',
+                  data: {
+                      labels: locLabels,
+                      datasets: [{
+                          label: 'Lines of Code',
+                          data: locLabels.map(d => data.locByDate[d]),
+                          borderColor: chartColors.primary,
+                          backgroundColor: chartColors.primaryLight,
+                          tension: 0.3,
+                          fill: true
+                      }]
+                  },
+                  options: baseLineOptions()
+              });
+          }
+      }
 
-        function baseLineOptions() {
-            return {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
-                    x: { grid: { display: false } }
-                }
-            };
-        }
+      function baseLineOptions() {
+          return {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                  y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
+                  x: { grid: { display: false } }
+              }
+          };
+      }
 
-        function baseBarOptions() {
-            return {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
-                    x: { grid: { display: false } }
-                }
-            };
-        }
+      function baseBarOptions() {
+          return {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                  y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
+                  x: { grid: { display: false } }
+              }
+          };
+      }
 
-        function initSorting() {
-            const tables = ['authorsTable', 'commitsTable', 'filesTable'];
-            tables.forEach(id => {
-                const table = document.getElementById(id);
-                if (!table) return;
-                sortStates[id] = {};
-                table.querySelectorAll('th[data-sort]').forEach(th => {
-                    const key = th.dataset.sort;
-                    sortStates[id][key] = null;
-                    th.addEventListener('click', () => sortTable(table, key, th));
-                });
-            });
-        }
+      function initPagination() {
+          tablePaginators['commitsByYearTable'] = setupPaginatedTable({ tableId: 'commitsByYearTable', pagerId: 'commitsByYearPager', pageSize: 10 });
+          tablePaginators['commitsByYearMonthTable'] = setupPaginatedTable({ tableId: 'commitsByYearMonthTable', pagerId: 'commitsByYearMonthPager', pageSize: 12 });
+          tablePaginators['authorOfMonthTable'] = setupPaginatedTable({ tableId: 'authorOfMonthTable', pagerId: 'authorOfMonthPager', pageSize: 12, reverse: true });
+          tablePaginators['authorOfYearTable'] = setupPaginatedTable({ tableId: 'authorOfYearTable', pagerId: 'authorOfYearPager', pageSize: 10, reverse: true });
+          tablePaginators['authorsTable'] = setupPaginatedTable({ tableId: 'authorsTable', pagerId: 'authorsPager', pageSize: 25 });
+          tablePaginators['domainsTable'] = setupPaginatedTable({ tableId: 'domainsTable', pagerId: 'domainsPager', pageSize: 15 });
+          tablePaginators['extensionsTable'] = setupPaginatedTable({ tableId: 'extensionsTable', pagerId: 'extensionsPager', pageSize: 10 });
+          tablePaginators['filesTable'] = setupPaginatedTable({ tableId: 'filesTable', pagerId: 'filesPager', pageSize: 20 });
+      }
 
-        function sortTable(table, key, th) {
-            const tbody = table.querySelector('tbody');
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            const current = sortStates[table.id][key];
-            const next = current === 'asc' ? 'desc' : 'asc';
-            sortStates[table.id][key] = next;
+      function setupPaginatedTable({ tableId, pagerId, pageSize = 10, reverse = false }) {
+          const table = document.getElementById(tableId);
+          const pager = document.getElementById(pagerId);
+          if (!table || !pager) return null;
+          const tbody = table.querySelector('tbody');
+          if (!tbody) return null;
 
-            table.querySelectorAll('th').forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
-            th.classList.add(`sorted-${next}`);
+          let baseRows = Array.from(tbody.querySelectorAll('tr'));
+          if (reverse) baseRows.reverse();
+          let filteredRows = baseRows.slice();
+          let filterFn = null;
+          let currentPage = 1;
 
-            const colIndex = {
-                name: 0, email: 1, commits: 2, added: 3, removed: 4, firstDate: 5, lastDate: 6,
-                hash: 0, author: 1, date: 2, message: 3, path: 0
-            }[key];
+          function recomputeFiltered() {
+              filteredRows = filterFn ? baseRows.filter(filterFn) : baseRows.slice();
+          }
 
-            rows.sort((a, b) => {
-                const aText = a.children[colIndex].textContent.trim();
-                const bText = b.children[colIndex].textContent.trim();
-                const numeric = ['commits','added','removed'].includes(key);
-                if (numeric) {
-                    const aNum = parseInt(aText.replace(/,/g, '')) || 0;
-                    const bNum = parseInt(bText.replace(/,/g, '')) || 0;
-                    return next === 'asc' ? aNum - bNum : bNum - aNum;
-                }
-                return next === 'asc' ? aText.localeCompare(bText) : bText.localeCompare(aText);
-            });
+          function render(page = currentPage) {
+              const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+              currentPage = Math.min(Math.max(page, 1), totalPages);
+              tbody.innerHTML = '';
+              const start = (currentPage - 1) * pageSize;
+              const slice = filteredRows.slice(start, start + pageSize);
+              slice.forEach(row => tbody.appendChild(row));
+              updatePager(pager, currentPage, totalPages, filteredRows.length, pageSize, render);
+          }
 
-            tbody.append(...rows);
-        }
+          render();
 
-        function initSearch() {
-            setupSearch('authorSearch', 'authorsTable', [0,1,3]);
-            setupSearch('fileSearch', 'filesTable', [0]);
-        }
+          return {
+              setRows(newRows) {
+                  baseRows = newRows.slice();
+                  recomputeFiltered();
+                  render(1);
+              },
+              applyFilter(predicate) {
+                  filterFn = predicate;
+                  recomputeFiltered();
+                  render(1);
+              },
+              reset() {
+                  filterFn = null;
+                  recomputeFiltered();
+                  render(1);
+              },
+              getAllRows() {
+                  return baseRows.slice();
+              }
+          };
+      }
 
-        function setupSearch(inputId, tableId, columns) {
-            const input = document.getElementById(inputId);
-            const table = document.getElementById(tableId);
-            if (!input || !table) return;
+      function updatePager(container, currentPage, totalPages, totalItems, pageSize, onChange) {
+          if (!container) return;
+          container.innerHTML = '';
 
-            const tbody = table.querySelector('tbody');
-            input.addEventListener('input', () => {
-                const term = input.value.toLowerCase();
-                tbody.querySelectorAll('tr').forEach(row => {
-                    const text = columns.map(idx => row.children[idx].textContent.toLowerCase()).join(' ');
-                    row.style.display = text.includes(term) ? '' : 'none';
-                });
-            });
-        }
+          if (!totalItems) {
+              container.textContent = 'No data';
+              return;
+          }
 
-        function initActivityCalendar() {
-            const el = document.getElementById('activityCalendar');
-            const legend = document.getElementById('calendarLegend');
-            const rangeEl = document.getElementById('calendarRange');
-            if (!el || !legend) return;
+          const start = (currentPage - 1) * pageSize + 1;
+          const end = Math.min(totalItems, start + pageSize - 1);
+          const info = document.createElement('span');
+          info.className = 'pager-info';
+          info.textContent = `${start}-${end} / ${totalItems}`;
+          const prev = createPagerButton('←', currentPage === 1, () => onChange(currentPage - 1));
+          const next = createPagerButton('→', currentPage >= totalPages, () => onChange(currentPage + 1));
 
-            let tooltip = document.querySelector('.calendar-tooltip');
-            if (!tooltip) {
-                tooltip = document.createElement('div');
-                tooltip.className = 'calendar-tooltip';
-                document.body.appendChild(tooltip);
-            }
+          container.append(prev, info, next);
+      }
 
-            const entries = Object.keys(data.activityByDate).map(key => ({ key, date: new Date(key), value: data.activityByDate[key] }));
-            const valid = entries.filter(e => !isNaN(e.date.getTime())).sort((a, b) => a.date - b.date);
+      function createPagerButton(label, disabled, onClick) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'pager-btn';
+          btn.textContent = label;
+          btn.disabled = disabled;
+          btn.addEventListener('click', onClick);
+          return btn;
+      }
 
-            if (valid.length === 0) {
-                el.innerHTML = '<span class="muted">No activity data</span>';
-                if (rangeEl) rangeEl.textContent = '';
-                return;
-            }
+      function initSorting() {
+          const tables = ['authorsTable', 'commitsTable', 'filesTable'];
+          tables.forEach(id => {
+              const table = document.getElementById(id);
+              if (!table) return;
+              sortStates[id] = {};
+              table.querySelectorAll('th[data-sort]').forEach(th => {
+                  const key = th.dataset.sort;
+                  sortStates[id][key] = null;
+                  th.addEventListener('click', () => sortTable(table, key, th));
+              });
+          });
+      }
 
-            const maxVal = Math.max(...valid.map(e => e.value), 1);
-            const start = new Date(valid[0].date);
-            start.setDate(start.getDate() - start.getDay()); // previous Sunday
-            const end = new Date(valid[valid.length - 1].date);
-            end.setDate(end.getDate() + (6 - end.getDay())); // next Saturday
+      function sortTable(table, key, th) {
+          const tbody = table.querySelector('tbody');
+          const paginator = tablePaginators[table.id];
+          const rows = paginator ? paginator.getAllRows() : Array.from(tbody.querySelectorAll('tr'));
+          const current = sortStates[table.id][key];
+          const next = current === 'asc' ? 'desc' : 'asc';
+          sortStates[table.id][key] = next;
 
-            const cells = [];
-            const valueMap = new Map(valid.map(e => [e.date.toDateString(), e.value]));
-            const cursor = new Date(start);
+          table.querySelectorAll('th').forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+          th.classList.add(`sorted-${next}`);
 
-            while (cursor <= end) {
-                const val = valueMap.get(cursor.toDateString()) || 0;
-                const level = val === 0 ? 0 : Math.min(4, Math.ceil((val / maxVal) * 4));
-                const dateStr = cursor.toISOString().slice(0,10);
-                cells.push(`<div class="day level-${level}" data-date="${dateStr}" data-count="${val}"></div>`);
-                cursor.setDate(cursor.getDate() + 1);
-            }
+          const colIndex = {
+              name: 0, email: 1, commits: 2, added: 3, removed: 4, firstDate: 5, lastDate: 6,
+              hash: 0, author: 1, date: 2, message: 3, path: 0
+          }[key];
 
-            el.innerHTML = cells.join('');
-            const columns = Math.max(1, Math.ceil(cells.length / 7));
-            const gap = 2;
-            const width = el.clientWidth || 800;
-            const cell = Math.min(18, Math.max(10, Math.floor((width - (columns - 1) * gap) / columns)));
-            el.style.setProperty('--cell', `${cell}px`);
-            el.style.setProperty('--gap', `${gap}px`);
-            legend.innerHTML = '<span style="margin-right:4px;">Less</span>' + [0,1,2,3,4].map(l => `<div class="day level-${l}"></div>`).join('') + '<span style="margin-left:4px;">More</span>';
-            if (rangeEl) {
-                const startStr = start.toISOString().slice(0,10);
-                const endStr = end.toISOString().slice(0,10);
-                rangeEl.textContent = `${startStr} – ${endStr}`;
-            }
+          rows.sort((a, b) => {
+              const aText = a.children[colIndex].textContent.trim();
+              const bText = b.children[colIndex].textContent.trim();
+              const numeric = ['commits','added','removed'].includes(key);
+              if (numeric) {
+                  const aNum = parseInt(aText.replace(/,/g, '')) || 0;
+                  const bNum = parseInt(bText.replace(/,/g, '')) || 0;
+                  return next === 'asc' ? aNum - bNum : bNum - aNum;
+              }
+              return next === 'asc' ? aText.localeCompare(bText) : bText.localeCompare(aText);
+          });
 
-            el.querySelectorAll('.day').forEach(day => {
-                day.addEventListener('mouseenter', (e) => {
-                    const date = day.dataset.date;
-                    const count = day.dataset.count;
-                    tooltip.textContent = `${date} — ${count} commits`;
-                    tooltip.style.display = 'block';
-                    positionTooltip(e, tooltip);
-                });
-                day.addEventListener('mousemove', (e) => positionTooltip(e, tooltip));
-                day.addEventListener('mouseleave', () => {
-                    tooltip.style.display = 'none';
-                });
-            });
-        }
+          if (paginator) {
+              paginator.setRows(rows);
+          } else {
+              tbody.append(...rows);
+          }
+      }
 
-        function positionTooltip(event, tooltip) {
-            const offset = 12;
-            const x = event.clientX + offset;
-            const y = event.clientY + offset;
-            tooltip.style.left = `${x}px`;
-            tooltip.style.top = `${y}px`;
-        }
+      function initSearch() {
+          setupSearch('authorSearch', 'authorsTable', [0,1,3], tablePaginators['authorsTable']);
+          setupSearch('fileSearch', 'filesTable', [0], tablePaginators['filesTable']);
+      }
 
-        function renderHourOfWeekGrid() {
-            const container = document.getElementById('hourWeekGrid');
-            if (!container || !data.hourOfWeek) return;
-            const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-            const maxVal = Math.max(...data.hourOfWeek.flat(), 1);
-            let html = '<div class="heatmap-row"><div class="heatmap-cell label"></div>';
-            for (let h = 0; h < 24; h++) html += `<div class="heatmap-cell label">${h}</div>`;
-            html += '</div>';
+      function setupSearch(inputId, tableId, columns, paginator) {
+          const input = document.getElementById(inputId);
+          const table = document.getElementById(tableId);
+          if (!input || !table) return;
 
-            days.forEach((day, idx) => {
-                html += `<div class="heatmap-row"><div class="heatmap-cell label">${day}</div>`;
-                for (let h = 0; h < 24; h++) {
-                    const val = data.hourOfWeek[idx][h] || 0;
-                    const level = val === 0 ? 0 : Math.min(4, Math.ceil((val / maxVal) * 4));
-                    html += `<div class="heatmap-cell level-${level}" title="${day} ${h}:00 – ${val} commits">${val}</div>`;
-                }
-                html += '</div>';
-            });
-            container.innerHTML = html;
-        }
+          const tbody = table.querySelector('tbody');
+          input.addEventListener('input', () => {
+              const term = input.value.toLowerCase();
+              if (paginator) {
+                  if (!term) {
+                      paginator.reset();
+                      return;
+                  }
+                  paginator.applyFilter(row => {
+                      return columns.some(idx => {
+                          const cell = row.children[idx];
+                          return cell && cell.textContent.toLowerCase().includes(term);
+                      });
+                  });
+                  return;
+              }
+              tbody.querySelectorAll('tr').forEach(row => {
+                  const text = columns.map(idx => row.children[idx].textContent.toLowerCase()).join(' ');
+                  row.style.display = text.includes(term) ? '' : 'none';
+              });
+          });
+      }
+
+      function initActivityCalendar() {
+          const el = document.getElementById('activityCalendar');
+          const legend = document.getElementById('calendarLegend');
+          const rangeEl = document.getElementById('calendarRange');
+          const yearLabel = document.getElementById('calendarYearLabel');
+          const prevBtn = document.getElementById('calendarPrev');
+          const nextBtn = document.getElementById('calendarNext');
+          if (!el || !legend) return;
+
+          let tooltip = document.querySelector('.calendar-tooltip');
+          if (!tooltip) {
+              tooltip = document.createElement('div');
+              tooltip.className = 'calendar-tooltip';
+              document.body.appendChild(tooltip);
+          }
+
+          const entries = Object.keys(data.activityByDate).map(key => ({ key, date: new Date(key), value: data.activityByDate[key] }));
+          const valid = entries.filter(e => !isNaN(e.date.getTime())).sort((a, b) => a.date - b.date);
+
+          if (valid.length === 0) {
+              el.innerHTML = '<span class="muted">No activity data</span>';
+              if (rangeEl) rangeEl.textContent = '';
+              return;
+          }
+
+          const maxVal = Math.max(...valid.map(e => e.value), 1);
+          const yearBuckets = new Map();
+          valid.forEach(entry => {
+              const year = entry.date.getFullYear();
+              if (!yearBuckets.has(year)) yearBuckets.set(year, []);
+              yearBuckets.get(year).push(entry);
+          });
+          yearBuckets.forEach(list => list.sort((a, b) => a.date - b.date));
+
+          const years = Array.from(yearBuckets.keys()).sort((a, b) => a - b);
+          let yearIndex = years.length - 1;
+
+          legend.innerHTML = '<span style="margin-right:4px;">Less</span>' + [0,1,2,3,4].map(l => `<div class="day level-${l}"></div>`).join('') + '<span style="margin-left:4px;">More</span>';
+
+          function renderYear(targetYear) {
+              const yearEntries = (yearBuckets.get(targetYear) || []).slice();
+              const valueMap = new Map(yearEntries.map(e => [e.date.toDateString(), e.value]));
+              const start = new Date(targetYear, 0, 1);
+              start.setDate(start.getDate() - start.getDay());
+              const end = new Date(targetYear, 11, 31);
+              end.setDate(end.getDate() + (6 - end.getDay()));
+
+              const cells = [];
+              const cursor = new Date(start);
+              while (cursor <= end) {
+                  const withinYear = cursor.getFullYear() === targetYear;
+                  const val = withinYear ? (valueMap.get(cursor.toDateString()) || 0) : 0;
+                  const level = val === 0 ? 0 : Math.min(4, Math.ceil((val / maxVal) * 4));
+                  const dateStr = cursor.toISOString().slice(0,10);
+                  cells.push(`<div class="day level-${level}" data-date="${dateStr}" data-count="${val}"></div>`);
+                  cursor.setDate(cursor.getDate() + 1);
+              }
+
+              el.innerHTML = cells.join('');
+              const columns = Math.max(1, Math.ceil(cells.length / 7));
+              const gap = 2;
+              const width = el.clientWidth || 800;
+              const cell = Math.min(18, Math.max(10, Math.floor((width - (columns - 1) * gap) / columns)));
+              el.style.setProperty('--cell', `${cell}px`);
+              el.style.setProperty('--gap', `${gap}px`);
+
+              if (rangeEl) {
+                  const firstDate = yearEntries[0]?.date || new Date(targetYear, 0, 1);
+                  const lastDate = yearEntries[yearEntries.length - 1]?.date || new Date(targetYear, 11, 31);
+                  rangeEl.textContent = `${firstDate.toISOString().slice(0,10)} – ${lastDate.toISOString().slice(0,10)}`;
+              }
+              if (yearLabel) yearLabel.textContent = targetYear;
+
+              el.querySelectorAll('.day').forEach(day => {
+                  day.addEventListener('mouseenter', (e) => {
+                      const date = day.dataset.date;
+                      const count = day.dataset.count;
+                      tooltip.textContent = `${date} — ${count} commits`;
+                      tooltip.style.display = 'block';
+                      positionTooltip(e, tooltip);
+                  });
+                  day.addEventListener('mousemove', (e) => positionTooltip(e, tooltip));
+                  day.addEventListener('mouseleave', () => {
+                      tooltip.style.display = 'none';
+                  });
+              });
+          }
+
+          function updateNav() {
+              if (prevBtn) prevBtn.disabled = yearIndex <= 0;
+              if (nextBtn) nextBtn.disabled = yearIndex >= years.length - 1;
+          }
+
+          renderYear(years[yearIndex]);
+          updateNav();
+
+          if (prevBtn) {
+              prevBtn.addEventListener('click', () => {
+                  if (yearIndex > 0) {
+                      yearIndex -= 1;
+                      renderYear(years[yearIndex]);
+                      updateNav();
+                  }
+              });
+          }
+
+          if (nextBtn) {
+              nextBtn.addEventListener('click', () => {
+                  if (yearIndex < years.length - 1) {
+                      yearIndex += 1;
+                      renderYear(years[yearIndex]);
+                      updateNav();
+                  }
+              });
+          }
+      }
+
+      function positionTooltip(event, tooltip) {
+          const offset = 12;
+          const x = event.clientX + offset;
+          const y = event.clientY + offset;
+          tooltip.style.left = `${x}px`;
+          tooltip.style.top = `${y}px`;
+      }
+
+      function renderHourOfWeekGrid() {
+          const container = document.getElementById('hourWeekGrid');
+          if (!container || !data.hourOfWeek) return;
+          const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          const maxVal = Math.max(...data.hourOfWeek.flat(), 1);
+          let html = '<div class="heatmap-row"><div class="heatmap-cell label"></div>';
+          for (let h = 0; h < 24; h++) html += `<div class="heatmap-cell label">${h}</div>`;
+          html += '</div>';
+
+          days.forEach((day, idx) => {
+              html += `<div class="heatmap-row"><div class="heatmap-cell label">${day}</div>`;
+              for (let h = 0; h < 24; h++) {
+                  const val = data.hourOfWeek[idx][h] || 0;
+                  const level = val === 0 ? 0 : Math.min(4, Math.ceil((val / maxVal) * 4));
+                  html += `<div class="heatmap-cell level-${level}" title="${day} ${h}:00 – ${val} commits">${val}</div>`;
+              }
+              html += '</div>';
+          });
+          container.innerHTML = html;
+      }
     </script>
-</body>
+  </body>
 </html>
