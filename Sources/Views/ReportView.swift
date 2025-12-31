@@ -47,26 +47,26 @@ struct ReportView: View {
         error = nil
         syncProgressFromProject()
         
-        do {
-            let engine = GitStatsEngine(project: project, context: modelContext)
-            let path = try await engine.generateStats { update in
+        StatsGenerator.generate(
+            for: project,
+            context: modelContext,
+            progress: { update in
                 Task { @MainActor in
                     processedCommits = update.processed
                     totalCommits = update.total
                     stage = update.stage
                 }
-            }
-            await MainActor.run {
+            },
+            completion: { result in
+            switch result {
+            case .success(let path):
                 statsPath = path
-                isGeneratingStats = false
                 stage = .processing
+            case .failure(let generationError):
+                error = generationError.localizedDescription
             }
-        } catch {
-            await MainActor.run {
-                self.error = error.localizedDescription
-                isGeneratingStats = false
-            }
-        }
+            isGeneratingStats = false
+        })
     }
 
     private func syncProgressFromProject() {

@@ -1,8 +1,6 @@
 import SwiftUI
-import SwiftData
 
 struct MainWindowView: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(DataController.self) private var dataController
 
     @State private var selectedProject: Project?
@@ -19,7 +17,7 @@ struct MainWindowView: View {
                 isAddingFolder: $isAddingFolder
             )
         } detail: {
-            if let project = selectedProject {
+            if let project = selectedProject, !project.isFolder {
                 ReportView(project: project)
                     .id(project.persistentModelID)
             } else {
@@ -98,30 +96,13 @@ struct MainWindowView: View {
             selectedProject = project
         }
 
-        Task.detached(priority: .userInitiated) {
-            await generateStats(for: project)
-        }
-    }
-
-    @MainActor
-    private func generateStats(for project: Project) async {
-        guard !project.isFolder else { return }
-
-        print("📊 Generating stats for project: \(project.displayName)")
-        project.isGeneratingStats = true
-        dataController.updateProject(project)
-
-        do {
-            let context = dataController.context
-            let engine = GitStatsEngine(project: project, context: context)
-            _ = try await engine.generateStats()
-            print("✅ Stats generated successfully")
-        } catch {
-            print("❌ Error generating stats: \(error)")
-        }
-
-        project.isGeneratingStats = false
-        dataController.updateProject(project)
+        StatsGenerator.generate(for: project, context: dataController.context, completion: { result in
+            if case let .failure(error) = result {
+                print("❌ Error generating stats: \(error)")
+            } else {
+                print("✅ Stats generated successfully")
+            }
+        })
     }
 }
 

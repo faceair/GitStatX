@@ -41,7 +41,6 @@ class GitRepository {
     private let gitPath: String
     private var treeCache: [String: GitTree] = [:]
     private var blobCache: [String: GitBlob] = [:]
-    private var lineCountCache: [String: Int] = [:]
     private let cacheLock = NSLock()
 
     init?(path: String) {
@@ -183,58 +182,9 @@ class GitRepository {
         return blob
     }
 
-    func flattenTreeEntries(hash: String) -> [GitTreeEntry] {
-        var result: [GitTreeEntry] = []
-        var stack: [(hash: String, prefix: String)] = [(hash, "")]
-
-        while let current = stack.popLast() {
-            guard let tree = parseTree(hash: current.hash) else { continue }
-
-            for entry in tree.entries {
-                let fullPath = current.prefix.isEmpty ? entry.path : "\(current.prefix)/\(entry.path)"
-                if entry.type == "tree" {
-                    stack.append((entry.hash, fullPath))
-                } else {
-                    result.append(GitTreeEntry(mode: entry.mode, type: entry.type, hash: entry.hash, path: fullPath))
-                }
-            }
-        }
-
-        return result
-    }
-
-    private func lineCount(forBlobHash hash: String) -> Int {
-        cacheLock.lock()
-        if let cached = lineCountCache[hash] {
-            cacheLock.unlock()
-            return cached
-        }
-        cacheLock.unlock()
-
-        guard let blob = parseBlob(hash: hash) else {
-            cacheLock.lock()
-            lineCountCache[hash] = 0
-            cacheLock.unlock()
-            return 0
-        }
-
-        let count = blob.data.reduce(0) { $0 + ($1 == 0x0a ? 1 : 0) }
-        cacheLock.lock()
-        lineCountCache[hash] = count
-        cacheLock.unlock()
-        return count
-    }
-
     struct ParsedCommitNumstat {
         let commit: GitCommit
         let numstats: [(path: String, added: Int, removed: Int)]
-    }
-
-    struct ParsedCommitShortstat {
-        let commit: GitCommit
-        let filesChanged: Int
-        let added: Int
-        let removed: Int
     }
 
     func getCommitsWithNumstat(since: String? = nil, progress: ((Int, Int) -> Void)? = nil) -> [ParsedCommitNumstat] {
@@ -323,89 +273,6 @@ class GitRepository {
 
         if let commit = currentCommit {
             results.append(ParsedCommitNumstat(commit: commit, numstats: currentNumstats))
-        }
-
-        return results
-    }
-
-    func getCommitsWithShortstat(since: String? = nil, progress: ((Int, Int) -> Void)? = nil) -> [ParsedCommitShortstat] {
-        var arguments = [
-            "-c", "log.showSignature=false",
-            "log",
-            "--all",
-            "--reverse",
-            "--no-renames",
-            "--no-decorate",
-            "--no-color",
-            "--date=unix",
-            "--shortstat",
-            "--format=%H%x01%T%x01%P%x01%an%x01%ae%x01%at%x01%cn%x01%ce%x01%ct%x01%s%x02"
-        ]
-
-        if let since = since {
-            arguments.insert("\(since)..HEAD", at: 4)
-        }
-
-        let result = runGit(arguments)
-        guard result.status == 0 else { return [] }
-
-        let text = String(decoding: result.data, as: UTF8.self)
-        var results: [ParsedCommitShortstat] = []
-
-        var currentCommit: GitCommit?
-        var filesChanged = 0
-        var added = 0
-        var removed = 0
-
-        var index = 0
-        let lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
-        let totalCommits = lines.filter { $0.contains("\u{02}") }.count
-
-        for line in lines {
-            if line.contains("\u{02}") {
-                if let commit = currentCommit {
-                    results.append(ParsedCommitShortstat(commit: commit, filesChanged: filesChanged, added: added, removed: removed))
-                    filesChanged = 0
-                    added = 0
-                    removed = 0
-                }
-
-                let header = line.replacingOccurrences(of: "\u{02}", with: "")
-                let parts = header.split(separator: "\u{01}", omittingEmptySubsequences: false)
-                guard parts.count >= 10 else { continue }
-
-                let parents = parts[2].isEmpty ? [] : parts[2].split(separator: " ").map(String.init)
-                let authorDate = Date(timeIntervalSince1970: TimeInterval(String(parts[5])) ?? 0)
-                let committerDate = Date(timeIntervalSince1970: TimeInterval(String(parts[8])) ?? authorDate.timeIntervalSince1970)
-
-                currentCommit = GitCommit(
-                    hash: String(parts[0]),
-                    treeHash: String(parts[1]),
-                    parentHashes: parents,
-                    authorName: String(parts[3]),
-                    authorEmail: String(parts[4]),
-                    authorDate: authorDate,
-                    committerName: String(parts[6]),
-                    committerEmail: String(parts[7]),
-                    committerDate: committerDate,
-                    message: String(parts[9])
-                )
-                index += 1
-                if index % 50 == 0 || index == totalCommits {
-                    progress?(index, totalCommits)
-                }
-            } else if line.contains("files changed") {
-                let numbers = line.split(whereSeparator: { !$0.isNumber && $0 != "-" })
-                if numbers.count >= 3 {
-                    filesChanged = Int(numbers[0]) ?? 0
-                    added = Int(numbers[1]) ?? 0
-                    removed = Int(numbers[2]) ?? 0
-                }
-            }
-        }
-
-        if let commit = currentCommit {
-            results.append(ParsedCommitShortstat(commit: commit, filesChanged: filesChanged, added: added, removed: removed))
         }
 
         return results

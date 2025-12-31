@@ -47,9 +47,11 @@ struct ProjectListView: View {
 
                 if !project.isFolder {
                     Button("Regenerate Report", systemImage: "arrow.clockwise") {
-                        Task {
-                            await regenerateReport(for: project)
-                        }
+                        StatsGenerator.generate(for: project, context: modelContext, forceFullRebuild: true, completion: { result in
+                            if case let .failure(error) = result {
+                                print("❌ Error regenerating stats: \(error)")
+                            }
+                        })
                     }
                 }
 
@@ -84,46 +86,21 @@ struct ProjectListView: View {
                     if GitRepository(path: path) != nil {
                         let project = dataController.addProject(path: path, isFolder: false)
 
-                        Task {
-                            await self.generateStats(for: project)
-                        }
+                        StatsGenerator.generate(for: project, context: modelContext, completion: { result in
+                            if case let .failure(error) = result {
+                                print("❌ Error generating stats: \(error)")
+                            }
+                        })
                     }
                 }
             }
         }
-    }
-
-    private func generateStats(for project: Project) async {
-        guard !project.isFolder else { return }
-
-        project.isGeneratingStats = true
-        dataController.updateProject(project)
-
-        let engine = GitStatsEngine(project: project, context: modelContext)
-        _ = try? await engine.generateStats()
-
-        project.isGeneratingStats = false
-        dataController.updateProject(project)
-    }
-
-    private func regenerateReport(for project: Project) async {
-        guard !project.isFolder else { return }
-
-        project.isGeneratingStats = true
-        dataController.updateProject(project)
-
-        let engine = GitStatsEngine(project: project, context: modelContext)
-        _ = try? await engine.generateStats(forceFullRebuild: true)
-
-        project.isGeneratingStats = false
-        dataController.updateProject(project)
     }
 }
 
 struct ProjectRow: View {
     @Bindable var project: Project
 
-    @State private var isEditing = false
     @State private var editingName = ""
 
     var body: some View {

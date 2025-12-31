@@ -1,5 +1,0 @@
-module Czlib {
-    header "zlib.h"
-    link "z"
-    export *
-}

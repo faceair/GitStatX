@@ -42,14 +42,18 @@ class GitStatsEngine {
             return project.statsPath
         }
 
-        project.isGeneratingStats = true
-        try? context.save()
+        await MainActor.run {
+            project.isGeneratingStats = true
+            try? context.save()
+        }
 
         defer {
             print("🏁 GitStatsEngine.generateStats() finished")
-            project.isGeneratingStats = false
-            project.lastGeneratedCommit = repository.currentCommitHash
-            try? context.save()
+            Task { @MainActor in
+                project.isGeneratingStats = false
+                project.lastGeneratedCommit = repository.currentCommitHash
+                try? self.context.save()
+            }
         }
 
         statsCache = forceFullRebuild ? nil : loadStatsCache()
@@ -302,6 +306,12 @@ class GitStatsEngine {
         }
         let aggregateDuration = Date().timeIntervalSince(aggregateStart)
 
+        await persistStats(
+            commits: parsedCommits,
+            authorStats: authorStats,
+            fileStats: fileStats
+        )
+
         let snapshotStart = Date()
         let snapshot: SnapshotStats?
         if let lastTreeHash = parsedCommits.last?.commit.treeHash {
@@ -421,5 +431,69 @@ class GitStatsEngine {
         } catch {
             print("⚠️ Failed to save stats cache: \(error)")
         }
+    }
+
+    private func persistStats(
+        commits parsedCommits: [GitRepository.ParsedCommitNumstat],
+        authorStats: [String: AuthorAgg],
+        fileStats: [String: FileAgg]
+    ) async {
+        await MainActor.run {
+            clearExistingStats()
+
+            for (_, stats) in authorStats {
+                let author = Author(
+                    name: stats.name,
+                    email: stats.email,
+                    commitsCount: stats.commits,
+                    linesAdded: stats.added,
+                    linesRemoved: stats.removed
+                )
+                author.firstCommitDate = stats.firstDate
+                author.lastCommitDate = stats.lastDate
+                author.project = project
+                context.insert(author)
+            }
+
+            for entry in parsedCommits {
+                let commitAdded = entry.numstats.reduce(0) { $0 + $1.added }
+                let commitRemoved = entry.numstats.reduce(0) { $0 + $1.removed }
+                let commit = Commit(
+                    commitHash: entry.commit.hash,
+                    authorName: entry.commit.authorName,
+                    authorEmail: entry.commit.authorEmail,
+                    authorDate: entry.commit.authorDate,
+                    committerName: entry.commit.committerName,
+                    committerEmail: entry.commit.committerEmail,
+                    committerDate: entry.commit.committerDate,
+                    message: entry.commit.message,
+                    linesAdded: commitAdded,
+                    linesRemoved: commitRemoved,
+                    filesChanged: entry.numstats.count
+                )
+                commit.project = project
+                context.insert(commit)
+            }
+
+            for (path, stats) in fileStats {
+                let file = File(
+                    path: path,
+                    commitsCount: stats.commits,
+                    linesAdded: stats.added,
+                    linesRemoved: stats.removed
+                )
+                file.project = project
+                context.insert(file)
+            }
+
+            try? context.save()
+        }
+    }
+
+    @MainActor
+    private func clearExistingStats() {
+        project.authors?.forEach { context.delete($0) }
+        project.commits?.forEach { context.delete($0) }
+        project.files?.forEach { context.delete($0) }
     }
 }

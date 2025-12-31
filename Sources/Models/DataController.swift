@@ -7,32 +7,32 @@ class DataController: Observable {
     let container: ModelContainer
     
     init() {
+        let schema = Schema([Project.self, Author.self, Commit.self, File.self])
+        let storeURL = Self.defaultStoreURL()
+        
         do {
-            let schema = Schema([Project.self, Author.self, Commit.self, File.self])
-            
-            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            let appDirectory = appSupport.appendingPathComponent("GitStatX")
-            try? FileManager.default.createDirectory(at: appDirectory, withIntermediateDirectories: true)
-            let storeURL = appDirectory.appendingPathComponent("default.store")
-            
-            let modelConfiguration = ModelConfiguration(schema: schema, url: storeURL)
-            
-            container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            container = try Self.makeContainer(schema: schema, storeURL: storeURL)
         } catch {
-            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            let appDirectory = appSupport.appendingPathComponent("GitStatX")
-            let storeURL = appDirectory.appendingPathComponent("default.store")
-            
             try? FileManager.default.removeItem(at: storeURL)
             
             do {
-                let schema = Schema([Project.self, Author.self, Commit.self, File.self])
-                let modelConfiguration = ModelConfiguration(schema: schema, url: storeURL)
-                container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+                container = try Self.makeContainer(schema: schema, storeURL: storeURL)
             } catch {
                 fatalError("Failed to create ModelContainer: \(error)")
             }
         }
+    }
+
+    private static func makeContainer(schema: Schema, storeURL: URL) throws -> ModelContainer {
+        let modelConfiguration = ModelConfiguration(schema: schema, url: storeURL)
+        return try ModelContainer(for: schema, configurations: [modelConfiguration])
+    }
+
+    private static func defaultStoreURL() -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appDirectory = appSupport.appendingPathComponent("GitStatX")
+        try? FileManager.default.createDirectory(at: appDirectory, withIntermediateDirectories: true)
+        return appDirectory.appendingPathComponent("default.store")
     }
     
     var context: ModelContext {
@@ -43,18 +43,6 @@ class DataController: Observable {
         let descriptor = FetchDescriptor<Project>(
             predicate: #Predicate<Project> { project in
                 project.parent == nil
-            },
-            sortBy: [SortDescriptor(\.listOrder)]
-        )
-        
-        return (try? context.fetch(descriptor)) ?? []
-    }
-    
-    func fetchChildren(of parent: Project) -> [Project] {
-        guard let parentId = parent.parentId else { return [] }
-        let descriptor = FetchDescriptor<Project>(
-            predicate: #Predicate<Project> { project in
-                project.parentId == parentId
             },
             sortBy: [SortDescriptor(\.listOrder)]
         )

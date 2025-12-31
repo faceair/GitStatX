@@ -8,7 +8,6 @@ final class Project {
     var projectType: String?
     var isFolder: Bool
     var listOrder: Int
-    var parentId: UUID?
     var expanded: Bool
     var isGeneratingStats: Bool
     var isRenaming: Bool
@@ -47,7 +46,6 @@ final class Project {
         self.createdAt = Date()
         self.updatedAt = Date()
         self.parent = parent
-        self.parentId = parent.map { UUID(uuidString: String(describing: $0.persistentModelID)) } ?? nil
     }
 
     var displayName: String {
