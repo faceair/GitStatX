@@ -10,6 +10,7 @@ class GitStatsEngine {
     private typealias FileAgg = (commits: Int, added: Int, removed: Int)
 
     private var statsCache: StatsCache?
+    private var generatedCommitHash: String?
     private var cacheURL: URL {
         URL(fileURLWithPath: project.statsPath).appendingPathComponent("stats_cache.json")
     }
@@ -50,9 +51,10 @@ class GitStatsEngine {
 
         defer {
             print("🏁 GitStatsEngine.generateStats() finished")
+            let commitToRecord = generatedCommitHash ?? repository.currentCommitHash
             Task { @MainActor in
                 project.isGeneratingStats = false
-                project.lastGeneratedCommit = repository.currentCommitHash
+                project.lastGeneratedCommit = commitToRecord
                 try? self.context.save()
             }
         }
@@ -90,6 +92,7 @@ class GitStatsEngine {
         }
         let fetchDuration = Date().timeIntervalSince(fetchStart)
 
+        generatedCommitHash = parsedCommits.last?.commit.hash ?? lastCachedCommit ?? repository.currentCommitHash
         print("✅ Found \(parsedCommits.count) commits")
 
         // 如果是增量处理且没有新提交，直接返回
@@ -412,7 +415,7 @@ class GitStatsEngine {
         print("⏱ Timing => fetch: \(fmt(fetchDuration)), init: \(fmt(initDataDuration)), aggregate: \(fmt(aggregateDuration)), snapshot: \(fmt(snapshotDuration)), tz: \(fmt(timezoneDuration)), tags: \(fmt(tagsDuration)), report: \(fmt(reportDuration)), total: \(fmt(totalDuration))")
 
         let cacheToSave = StatsCache(
-            lastCommit: repository.currentCommitHash,
+            lastCommit: generatedCommitHash ?? repository.currentCommitHash,
             totalCommits: totalCommits,
             totalLinesAdded: totalLinesAdded,
             totalLinesRemoved: totalLinesRemoved,

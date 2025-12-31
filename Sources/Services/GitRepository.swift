@@ -224,7 +224,7 @@ class GitRepository {
         ]
 
         if let since = since {
-            arguments.insert("\(since)..HEAD", at: 2)
+            arguments.insert("\(since)..HEAD", at: 3)
         }
 
         let result = runGit(arguments)

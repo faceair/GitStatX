@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainWindowView: View {
     @Environment(DataController.self) private var dataController
+    @Environment(\.modelContext) private var modelContext
 
     @State private var selectedProject: Project?
     @State private var isAddingProject = false
@@ -39,6 +40,22 @@ struct MainWindowView: View {
             }
 
             if let project = selectedProject, !project.isFolder {
+                ToolbarItem(placement: .automatic) {
+                    Button("Regenerate", systemImage: "arrow.clockwise") {
+                        project.isGeneratingStats = true
+                        project.progressStage = "scanning"
+                        project.progressProcessed = 0
+                        project.progressTotal = 0
+                        try? modelContext.save()
+                        StatsGenerator.generate(for: project, context: modelContext, forceFullRebuild: true, completion: { result in
+                            if case let .failure(error) = result {
+                                print("❌ Error regenerating stats: \(error)")
+                            }
+                        })
+                    }
+                    .disabled(project.isGeneratingStats)
+                }
+
                 ToolbarItem(placement: .automatic) {
                     Button("Export", systemImage: "square.and.arrow.up") {
                         showingExportSheet = true
