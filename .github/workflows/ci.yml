@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-latest
@@ -23,9 +26,20 @@ jobs:
           chmod +x build.sh
           ./build.sh
 
+      - name: Archive app bundle (zip)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/GitStatX.app dist/GitStatX.app.zip
+
       - name: Upload artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: GitStatX.app
           path: dist/GitStatX.app
+
+      - name: Publish release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/GitStatX.app.zip
