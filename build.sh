@@ -64,4 +64,14 @@ for bundle in "$BIN_PATH"/*.bundle; do
 done
 shopt -u nullglob
 
+SPM_BUNDLE_NAME="GitStatX_GitStatX.bundle"
+SPM_BUNDLE_SRC="$RESOURCES_DIR/$SPM_BUNDLE_NAME"
+SPM_BUNDLE_DEST="$APP_DIR/$SPM_BUNDLE_NAME"
+if [[ -d "$SPM_BUNDLE_SRC" ]]; then
+  ln -snf "Contents/Resources/$SPM_BUNDLE_NAME" "$SPM_BUNDLE_DEST"
+else
+  echo "❌ Missing SPM resource bundle: $SPM_BUNDLE_SRC"
+  exit 1
+fi
+
 echo "✅ App bundle ready at $APP_DIR"
