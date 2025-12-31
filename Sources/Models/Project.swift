@@ -24,15 +24,6 @@ final class Project {
     @Relationship(deleteRule: .cascade)
     var children: [Project]?
 
-    @Relationship(deleteRule: .cascade)
-    var authors: [Author]?
-
-    @Relationship(deleteRule: .cascade)
-    var commits: [Commit]?
-
-    @Relationship(deleteRule: .cascade)
-    var files: [File]?
-
     init(name: String? = nil, path: String? = nil, projectType: String? = nil, isFolder: Bool = false, listOrder: Int = 0, parent: Project? = nil, expanded: Bool = false) {
         self.name = name
         self.path = path

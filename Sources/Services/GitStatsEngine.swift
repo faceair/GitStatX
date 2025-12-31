@@ -142,6 +142,7 @@ class GitStatsEngine {
         let workerCount = max(1, min(ProcessInfo.processInfo.activeProcessorCount * 2, parsedCommits.count))
         let chunkSize = (parsedCommits.count + workerCount - 1) / workerCount
         var partials = Array(repeating: PartialAggregate(), count: workerCount)
+        let progressQueue = DispatchQueue(label: "com.gitstatx.progress")
 
         DispatchQueue.concurrentPerform(iterations: workerCount) { worker in
             let start = worker * chunkSize
@@ -224,6 +225,7 @@ class GitStatsEngine {
 
         var dailyNetLoc: [String: Int] = [:]
         var firstSeenDayForFile: [String: String] = [:]
+        var processedChunks = 0
 
         for partial in partials {
             totalCommits += partial.totalCommits
@@ -276,6 +278,19 @@ class GitStatsEngine {
             }
         }
 
+        var clampedProcessed = parsedCommits.count
+        progressQueue.sync {
+            processedChunks += 1
+            let processedSoFar = processedChunks * chunkSize
+            clampedProcessed = min(processedSoFar, parsedCommits.count)
+        }
+        progress?(ProgressUpdate(stage: .processing, processed: clampedProcessed, total: parsedCommits.count))
+        Task { @MainActor in
+            self.project.progressStage = "processing"
+            self.project.progressProcessed = clampedProcessed
+            self.project.progressTotal = parsedCommits.count
+        }
+
         if !dailyNetLoc.isEmpty {
             let sortedDays = dailyNetLoc.keys.sorted()
             for day in sortedDays {
@@ -305,12 +320,6 @@ class GitStatsEngine {
             self.project.progressTotal = parsedCommits.count
         }
         let aggregateDuration = Date().timeIntervalSince(aggregateStart)
-
-        await persistStats(
-            commits: parsedCommits,
-            authorStats: authorStats,
-            fileStats: fileStats
-        )
 
         let snapshotStart = Date()
         let snapshot: SnapshotStats?
@@ -433,67 +442,4 @@ class GitStatsEngine {
         }
     }
 
-    private func persistStats(
-        commits parsedCommits: [GitRepository.ParsedCommitNumstat],
-        authorStats: [String: AuthorAgg],
-        fileStats: [String: FileAgg]
-    ) async {
-        await MainActor.run {
-            clearExistingStats()
-
-            for (_, stats) in authorStats {
-                let author = Author(
-                    name: stats.name,
-                    email: stats.email,
-                    commitsCount: stats.commits,
-                    linesAdded: stats.added,
-                    linesRemoved: stats.removed
-                )
-                author.firstCommitDate = stats.firstDate
-                author.lastCommitDate = stats.lastDate
-                author.project = project
-                context.insert(author)
-            }
-
-            for entry in parsedCommits {
-                let commitAdded = entry.numstats.reduce(0) { $0 + $1.added }
-                let commitRemoved = entry.numstats.reduce(0) { $0 + $1.removed }
-                let commit = Commit(
-                    commitHash: entry.commit.hash,
-                    authorName: entry.commit.authorName,
-                    authorEmail: entry.commit.authorEmail,
-                    authorDate: entry.commit.authorDate,
-                    committerName: entry.commit.committerName,
-                    committerEmail: entry.commit.committerEmail,
-                    committerDate: entry.commit.committerDate,
-                    message: entry.commit.message,
-                    linesAdded: commitAdded,
-                    linesRemoved: commitRemoved,
-                    filesChanged: entry.numstats.count
-                )
-                commit.project = project
-                context.insert(commit)
-            }
-
-            for (path, stats) in fileStats {
-                let file = File(
-                    path: path,
-                    commitsCount: stats.commits,
-                    linesAdded: stats.added,
-                    linesRemoved: stats.removed
-                )
-                file.project = project
-                context.insert(file)
-            }
-
-            try? context.save()
-        }
-    }
-
-    @MainActor
-    private func clearExistingStats() {
-        project.authors?.forEach { context.delete($0) }
-        project.commits?.forEach { context.delete($0) }
-        project.files?.forEach { context.delete($0) }
-    }
 }

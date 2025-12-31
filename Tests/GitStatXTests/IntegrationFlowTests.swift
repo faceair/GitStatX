@@ -44,9 +44,6 @@ final class IntegrationFlowTests: XCTestCase {
         let config = ModelConfiguration(url: storeURL)
         let container = try ModelContainer(
             for: Project.self,
-            Author.self,
-            Commit.self,
-            File.self,
             configurations: config
         )
         let context = ModelContext(container)
@@ -56,17 +53,16 @@ final class IntegrationFlowTests: XCTestCase {
         context.insert(project)
 
         let engine = GitStatsEngine(project: project, context: context)
-        try await engine.generateStats()
+        _ = try await engine.generateStats()
 
-        let commits = try context.fetch(FetchDescriptor<Commit>())
-        XCTAssertEqual(commits.count, 2, "Should record two commits")
-
-        let authors = try context.fetch(FetchDescriptor<Author>())
-        XCTAssertEqual(authors.count, 1, "Should aggregate to one author")
-        XCTAssertEqual(authors.first?.commitsCount, 2, "Author commit count should match")
-
-        let files = try context.fetch(FetchDescriptor<File>())
-        XCTAssertEqual(files.count, 1, "Should track one file")
+        let cacheURL = URL(fileURLWithPath: project.statsPath).appendingPathComponent("stats_cache.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cacheURL.path), "stats_cache.json should be generated")
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let cache = try decoder.decode(StatsCache.self, from: Data(contentsOf: cacheURL))
+        XCTAssertEqual(cache.totalCommits, 2, "Cache should record two commits")
+        XCTAssertEqual(cache.authorStats.count, 1, "Cache should have one author")
+        XCTAssertEqual(cache.fileStats.count, 1, "Cache should have one file")
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: project.statsIndexPath), "Report index.html should be generated")
 

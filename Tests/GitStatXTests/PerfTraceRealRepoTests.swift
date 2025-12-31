@@ -15,9 +15,6 @@ final class PerfTraceRealRepoTests: XCTestCase {
         let config = ModelConfiguration(url: storeURL)
         let container = try ModelContainer(
             for: Project.self,
-            Author.self,
-            Commit.self,
-            File.self,
             configurations: config
         )
         let context = ModelContext(container)
@@ -29,7 +26,7 @@ final class PerfTraceRealRepoTests: XCTestCase {
         let engine = GitStatsEngine(project: project, context: context)
 
         let start = Date()
-        try await engine.generateStats(forceFullRebuild: true)
+        _ = try await engine.generateStats(forceFullRebuild: true)
         let total = Date().timeIntervalSince(start)
         print(String(format: "⏱ PerfTrace GuanceDB total: %.3fs", total))
     }

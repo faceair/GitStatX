@@ -7,7 +7,7 @@ class DataController: Observable {
     let container: ModelContainer
     
     init() {
-        let schema = Schema([Project.self, Author.self, Commit.self, File.self])
+        let schema = Schema([Project.self])
         let storeURL = Self.defaultStoreURL()
         
         do {
