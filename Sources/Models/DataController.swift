@@ -75,11 +75,6 @@ class DataController: Observable {
         context.delete(project)
         try? context.save()
     }
-    
-    func updateProject(_ project: Project) {
-        project.save()
-        try? context.save()
-    }
 
     private func resetStuckProjects() {
         let descriptor = FetchDescriptor<Project>()

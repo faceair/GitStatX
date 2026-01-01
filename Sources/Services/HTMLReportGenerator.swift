@@ -4,7 +4,6 @@ struct SnapshotStats {
     let fileCount: Int
     let lineCount: Int
     let extensions: [String: (files: Int, lines: Int)]
-    let totalSize: Int
 }
 
 struct TagStats {
@@ -124,8 +123,6 @@ class HTMLReportGenerator {
         }
         let activeDaysPercent = ageDays > 0 ? (Double(activeDays) / Double(ageDays) * 100) : 0
         let avgPerAuthor = totalAuthors > 0 ? Double(totalCommits) / Double(totalAuthors) : 0
-        let totalSize = snapshot?.totalSize ?? 0
-        let averageFileSize = totalFiles > 0 ? Double(totalSize) / Double(totalFiles) : 0
 
         let activityByDate = Self.calculateActivityByDate(commits: commits)
         let activityByHour = Self.calculateActivityByHour(commits: commits)
@@ -142,11 +139,6 @@ class HTMLReportGenerator {
         let domains = Self.calculateDomains(authors: authors)
         let authorOfMonth = Self.calculateAuthorLeaders(commits: commits, component: .month)
         let authorOfYear = Self.calculateAuthorLeaders(commits: commits, component: .year)
-        let byteFormatter = ByteCountFormatter()
-        byteFormatter.allowedUnits = [.useKB, .useMB, .useGB]
-        byteFormatter.countStyle = .file
-        let totalSizeLabel = byteFormatter.string(fromByteCount: Int64(totalSize))
-        let averageFileSizeLabel = byteFormatter.string(fromByteCount: Int64(averageFileSize.rounded()))
         let totalTags = tags.count
         let avgCommitsPerTag = totalTags > 0 ? Double(tags.reduce(0) { $0 + $1.commits }) / Double(totalTags) : 0
         let tagGaps = tags.compactMap { $0.daysSincePrevious }
@@ -167,8 +159,6 @@ class HTMLReportGenerator {
         template = template.replacingOccurrences(of: "{{AVG_PER_DAY}}", with: String(format: "%.2f", avgPerDay))
         template = template.replacingOccurrences(of: "{{ACTIVE_DAYS_PERCENT}}", with: String(format: "%.2f", activeDaysPercent))
         template = template.replacingOccurrences(of: "{{AVG_PER_AUTHOR}}", with: String(format: "%.2f", avgPerAuthor))
-        template = template.replacingOccurrences(of: "{{TOTAL_SIZE}}", with: totalSizeLabel)
-        template = template.replacingOccurrences(of: "{{AVG_FILE_SIZE}}", with: averageFileSizeLabel)
         template = template.replacingOccurrences(of: "{{TOTAL_TAGS}}", with: totalTags.formatted())
         template = template.replacingOccurrences(of: "{{AVG_COMMITS_PER_TAG}}", with: String(format: "%.2f", avgCommitsPerTag))
         template = template.replacingOccurrences(of: "{{AVG_DAYS_BETWEEN_TAGS}}", with: String(format: "%.2f", avgDaysBetweenTags))

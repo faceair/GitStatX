@@ -72,8 +72,4 @@ final class Project {
     var statsExists: Bool {
         FileManager.default.fileExists(atPath: statsIndexPath)
     }
-
-    func save() {
-        updatedAt = Date()
-    }
 }

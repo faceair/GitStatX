@@ -3,8 +3,8 @@ import SwiftData
 @testable import GitStatX
 
 final class PerfTraceRealRepoTests: XCTestCase {
-    func testPerfTraceGuanceDB() async throws {
-        let repoPath = "/Users/faceair/Developer/GuanceDB"
+    func testPerfTraceVictoriaMetrics() async throws {
+        let repoPath = "/Users/faceair/Developer/VictoriaMetrics"
         guard FileManager.default.fileExists(atPath: repoPath) else {
             throw XCTSkip("Repo not found at \(repoPath)")
         }
@@ -16,7 +16,7 @@ final class PerfTraceRealRepoTests: XCTestCase {
         )
         let context = ModelContext(container)
 
-        let project = Project(name: "Perf GuanceDB", path: repoPath)
+        let project = Project(name: "Perf VictoriaMetrics", path: repoPath)
         context.insert(project)
 
         let engine = GitStatsEngine(project: project, context: context)
@@ -24,6 +24,6 @@ final class PerfTraceRealRepoTests: XCTestCase {
         let start = Date()
         _ = try await engine.generateStats(forceFullRebuild: true)
         let total = Date().timeIntervalSince(start)
-        print(String(format: "⏱ PerfTrace GuanceDB total: %.3fs", total))
+        print(String(format: "⏱ PerfTrace VictoriaMetrics total: %.3fs", total))
     }
 }

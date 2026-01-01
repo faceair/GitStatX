@@ -32,12 +32,6 @@ struct GitTag {
     let date: Date?
 }
 
-enum FileChangeKind: String {
-    case added
-    case removed
-    case modified
-}
-
 struct GitBlob {
     let hash: String
     let data: Data
@@ -105,10 +99,6 @@ class GitRepository {
         guard parts.count == 2, let hours = Int(parts[0]), let minutes = Int(parts[1]) else { return nil }
         let total = hours * 60 + minutes
         return sign == "-" ? -total : total
-    }
-
-    var isValid: Bool {
-        runGit(["rev-parse", "--is-inside-work-tree"]).status == 0
     }
 
     var currentBranch: String? {
@@ -396,155 +386,4 @@ class GitRepository {
         return tags
     }
 
-    func getCommitHashes(forTag tag: String) -> [String] {
-        let result = runGit(["rev-list", tag])
-        guard result.status == 0 else { return [] }
-        return String(decoding: result.data, as: UTF8.self)
-            .split(whereSeparator: \.isNewline)
-            .map(String.init)
-    }
-
-    func getShortlogBetween(tag: String, previousTag: String?) -> [(author: String, commits: Int)] {
-        var args = ["shortlog", "-s", tag]
-        if let prev = previousTag {
-            args.append("^\(prev)")
-        }
-        let result = runGit(args)
-        guard result.status == 0 else { return [] }
-
-        let lines = String(decoding: result.data, as: UTF8.self).split(whereSeparator: \.isNewline)
-        var entries: [(String, Int)] = []
-        for line in lines {
-            let parts = line.split(maxSplits: 1, omittingEmptySubsequences: true, whereSeparator: \.isWhitespace)
-            guard parts.count == 2, let count = Int(parts[0]) else { continue }
-            entries.append((String(parts[1]), count))
-        }
-        return entries
-    }
-
-    func getDiffStats(oldTreeHash: String?, newTreeHash: String) -> (added: Int, removed: Int, filesChanged: Int) {
-        let details = getDiffDetails(oldTreeHash: oldTreeHash, newTreeHash: newTreeHash)
-        return (details.added, details.removed, details.filesChanged)
-    }
-
-    func getDiffDetails(oldTreeHash: String?, newTreeHash: String) -> (added: Int, removed: Int, filesChanged: Int, perFile: [String: (added: Int, removed: Int, kind: FileChangeKind)]) {
-        let emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-        let base = oldTreeHash ?? emptyTree
-        let result = runGit(["diff", "--numstat", base, newTreeHash])
-        guard result.status == 0 else {
-            return (0, 0, 0, [:])
-        }
-
-        let text = String(decoding: result.data, as: UTF8.self)
-        var added = 0
-        var removed = 0
-        var perFile: [String: (added: Int, removed: Int, kind: FileChangeKind)] = [:]
-
-        let lines = text.split(whereSeparator: \.isNewline)
-        for line in lines {
-            let fields = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
-            guard fields.count == 3 else { continue }
-            let addedValue = Int(fields[0]) ?? 0
-            let removedValue = Int(fields[1]) ?? 0
-            let path = String(fields[2])
-
-            added += addedValue
-            removed += removedValue
-
-            let kind: FileChangeKind
-            if addedValue > 0 && removedValue == 0 {
-                kind = .added
-            } else if addedValue == 0 && removedValue > 0 {
-                kind = .removed
-            } else {
-                kind = .modified
-            }
-            perFile[path] = (addedValue, removedValue, kind)
-        }
-
-        return (added, removed, perFile.count, perFile)
-    }
-
-    func calculateSnapshotStats(treeHash: String) -> (files: Int, lines: Int, extensions: [String: (files: Int, lines: Int)], size: Int) {
-        let lsResult = runGit(["ls-tree", "-r", "-z", treeHash])
-        guard lsResult.status == 0 else { return (0, 0, [:], 0) }
-
-        let entries = lsResult.data.split(separator: 0)
-        var blobs: [(hash: String, path: String)] = []
-
-        for entry in entries {
-            guard let line = String(data: entry, encoding: .utf8) else { continue }
-            let pieces = line.split(separator: "\t", maxSplits: 1)
-            guard pieces.count == 2 else { continue }
-            let header = pieces[0].split(separator: " ")
-            guard header.count == 3, header[1] == "blob" else { continue }
-
-            let hash = String(header[2])
-            let path = String(pieces[1])
-            blobs.append((hash, path))
-        }
-
-        guard !blobs.isEmpty else { return (0, 0, [:], 0) }
-
-        let batchProcess = Process()
-        batchProcess.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        batchProcess.currentDirectoryURL = URL(fileURLWithPath: path)
-        batchProcess.arguments = ["git", "cat-file", "--batch"]
-
-        let inputPipe = Pipe()
-        let outputPipe = Pipe()
-        batchProcess.standardInput = inputPipe
-        batchProcess.standardOutput = outputPipe
-        batchProcess.standardError = Pipe()
-
-        do {
-            try batchProcess.run()
-        } catch {
-            return (blobs.count, 0, [:], 0)
-        }
-
-        let request = blobs.map { "\($0.hash)\n" }.joined()
-        if let data = request.data(using: .utf8) {
-            inputPipe.fileHandleForWriting.write(data)
-        }
-        inputPipe.fileHandleForWriting.closeFile()
-
-        let batchData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        batchProcess.waitUntilExit()
-
-        var offset = batchData.startIndex
-        var totalLines = 0
-        var totalSize = 0
-        var extensions: [String: (files: Int, lines: Int)] = [:]
-
-        for entry in blobs {
-            guard let headerEnd = batchData[offset...].firstIndex(of: 0x0a) else { break }
-            let headerData = batchData[offset..<headerEnd]
-            offset = batchData.index(after: headerEnd)
-
-            guard let header = String(data: headerData, encoding: .utf8) else { break }
-            let headerParts = header.split(separator: " ")
-            guard headerParts.count >= 3, let size = Int(headerParts[2]) else { break }
-
-            guard let contentEnd = batchData.index(offset, offsetBy: size, limitedBy: batchData.endIndex) else { break }
-            let content = batchData[offset..<contentEnd]
-            offset = contentEnd
-            if offset < batchData.endIndex {
-                offset = batchData.index(after: offset)
-            }
-
-            totalSize += size
-            let lineCount = content.reduce(0) { $0 + ($1 == 0x0a ? 1 : 0) }
-            totalLines += lineCount
-
-            let ext = URL(fileURLWithPath: entry.path).pathExtension.lowercased()
-            let key = ext.isEmpty ? "no-extension" : ext
-            var stats = extensions[key] ?? (0, 0)
-            stats.files += 1
-            stats.lines += lineCount
-            extensions[key] = stats
-        }
-
-        return (blobs.count, totalLines, extensions, totalSize)
-    }
 }

@@ -34,6 +34,7 @@ class GitStatsEngine {
     func generateStats(forceFullRebuild: Bool = false, progress: ((ProgressUpdate) -> Void)? = nil) async throws -> String {
         print("🚀 GitStatsEngine.generateStats() started")
         let generatedAt = Date()
+        func fmt(_ t: TimeInterval) -> String { String(format: "%.3fs", t) }
 
         if !forceFullRebuild,
            let last = project.lastGeneratedCommit,
@@ -94,6 +95,7 @@ class GitStatsEngine {
 
         generatedCommitHash = parsedCommits.last?.commit.hash ?? lastCachedCommit ?? repository.currentCommitHash
         print("✅ Found \(parsedCommits.count) commits")
+        print("⏱ Fetch stage finished in \(fmt(fetchDuration))")
 
         // 如果是增量处理且没有新提交，直接返回
         if isIncremental && parsedCommits.isEmpty {
@@ -143,217 +145,28 @@ class GitStatsEngine {
         let initDataDuration = Date().timeIntervalSince(initDataStart)
 
         print("📈 Aggregating results...")
-        let aggregateStart = Date()
-        struct PartialAggregate {
-            var totalCommits: Int = 0
-            var totalAdded: Int = 0
-            var totalRemoved: Int = 0
-            var authorStats: [String: AuthorAgg] = [:]
-            var fileStats: [String: FileAgg] = [:]
-            var dailyNetLoc: [String: Int] = [:]
-            var firstSeenDayForFile: [String: String] = [:]
-            var linesAddedByYear: [String: Int] = [:]
-            var linesRemovedByYear: [String: Int] = [:]
-            var linesAddedByYearMonth: [String: Int] = [:]
-            var linesRemovedByYearMonth: [String: Int] = [:]
-        }
+        let aggregateDuration = aggregateCommits(
+            parsedCommits: parsedCommits,
+            authorStats: &authorStats,
+            fileStats: &fileStats,
+            fileSet: &fileSet,
+            filesByDate: &filesByDate,
+            locByDate: &locByDate,
+            linesAddedByYear: &linesAddedByYear,
+            linesRemovedByYear: &linesRemovedByYear,
+            linesAddedByYearMonth: &linesAddedByYearMonth,
+            linesRemovedByYearMonth: &linesRemovedByYearMonth,
+            totalCommits: &totalCommits,
+            totalLinesAdded: &totalLinesAdded,
+            totalLinesRemoved: &totalLinesRemoved,
+            currentLoc: &currentLoc
+        )
 
-        let workerCount = max(1, min(ProcessInfo.processInfo.activeProcessorCount * 2, parsedCommits.count))
-        let chunkSize = (parsedCommits.count + workerCount - 1) / workerCount
-        var partials = Array(repeating: PartialAggregate(), count: workerCount)
-        let progressQueue = DispatchQueue(label: "com.gitstatx.progress")
-
-        DispatchQueue.concurrentPerform(iterations: workerCount) { worker in
-            let start = worker * chunkSize
-            let end = min(start + chunkSize, parsedCommits.count)
-            guard start < end else { return }
-
-            var partial = PartialAggregate()
-            let calendar = Calendar(identifier: .gregorian)
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withFullDate]
-
-            for index in start..<end {
-                let entry = parsedCommits[index]
-                partial.totalCommits += 1
-                let commit = entry.commit
-                let dayKey = formatter.string(from: calendar.startOfDay(for: commit.authorDate))
-
-                let authorKey = "\(commit.authorName) <\(commit.authorEmail)>"
-                if partial.authorStats[authorKey] == nil {
-                    partial.authorStats[authorKey] = (commit.authorName, commit.authorEmail, 0, 0, 0, commit.authorDate, commit.authorDate)
-                }
-
-                var stats = partial.authorStats[authorKey]!
-                let commitAdded = entry.numstats.reduce(0) { $0 + $1.added }
-                let commitRemoved = entry.numstats.reduce(0) { $0 + $1.removed }
-                let dateComponents = calendar.dateComponents([.year, .month], from: commit.authorDate)
-                if let year = dateComponents.year {
-                    let yearKey = String(format: "%04d", year)
-                    partial.linesAddedByYear[yearKey, default: 0] += commitAdded
-                    partial.linesRemovedByYear[yearKey, default: 0] += commitRemoved
-                    if let month = dateComponents.month {
-                        let ymKey = String(format: "%04d-%02d", year, month)
-                        partial.linesAddedByYearMonth[ymKey, default: 0] += commitAdded
-                        partial.linesRemovedByYearMonth[ymKey, default: 0] += commitRemoved
-                    }
-                }
-                stats.commits += 1
-                stats.added += commitAdded
-                stats.removed += commitRemoved
-                stats.firstDate = stats.firstDate.map { min($0, commit.authorDate) } ?? commit.authorDate
-                stats.lastDate = stats.lastDate.map { max($0, commit.authorDate) } ?? commit.authorDate
-                partial.authorStats[authorKey] = stats
-
-                partial.totalAdded += commitAdded
-                partial.totalRemoved += commitRemoved
-                partial.dailyNetLoc[dayKey, default: 0] += commitAdded - commitRemoved
-
-                for numstat in entry.numstats {
-                    var fstats = partial.fileStats[numstat.path] ?? (0, 0, 0)
-                    fstats.commits += 1
-                    fstats.added += numstat.added
-                    fstats.removed += numstat.removed
-                    partial.fileStats[numstat.path] = fstats
-
-                    if partial.firstSeenDayForFile[numstat.path] == nil {
-                        partial.firstSeenDayForFile[numstat.path] = dayKey
-                    } else if let existingDay = partial.firstSeenDayForFile[numstat.path], dayKey < existingDay {
-                        partial.firstSeenDayForFile[numstat.path] = dayKey
-                    }
-                }
-            }
-
-            partials[worker] = partial
-        }
-
-        func minDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
-            switch (lhs, rhs) {
-            case let (l?, r?):
-                return min(l, r)
-            case (nil, let r?):
-                return r
-            case (let l?, nil):
-                return l
-            default:
-                return nil
-            }
-        }
-
-        func maxDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
-            switch (lhs, rhs) {
-            case let (l?, r?):
-                return max(l, r)
-            case (nil, let r?):
-                return r
-            case (let l?, nil):
-                return l
-            default:
-                return nil
-            }
-        }
-
-        var dailyNetLoc: [String: Int] = [:]
-        var firstSeenDayForFile: [String: String] = [:]
-        var processedChunks = 0
-
-        for partial in partials {
-            totalCommits += partial.totalCommits
-            totalLinesAdded += partial.totalAdded
-            totalLinesRemoved += partial.totalRemoved
-
-            for (key, stats) in partial.authorStats {
-                if let existing = authorStats[key] {
-                    authorStats[key] = (
-                        name: existing.name,
-                        email: existing.email,
-                        commits: existing.commits + stats.commits,
-                        added: existing.added + stats.added,
-                        removed: existing.removed + stats.removed,
-                        firstDate: minDate(existing.firstDate, stats.firstDate),
-                        lastDate: maxDate(existing.lastDate, stats.lastDate)
-                    )
-                } else {
-                    authorStats[key] = stats
-                }
-            }
-
-            for (path, stats) in partial.fileStats {
-                if let existing = fileStats[path] {
-                    fileStats[path] = (
-                        commits: existing.commits + stats.commits,
-                        added: existing.added + stats.added,
-                        removed: existing.removed + stats.removed
-                    )
-                } else {
-                    fileStats[path] = stats
-                }
-            }
-
-            for (year, added) in partial.linesAddedByYear {
-                linesAddedByYear[year, default: 0] += added
-            }
-            for (year, removed) in partial.linesRemovedByYear {
-                linesRemovedByYear[year, default: 0] += removed
-            }
-            for (period, added) in partial.linesAddedByYearMonth {
-                linesAddedByYearMonth[period, default: 0] += added
-            }
-            for (period, removed) in partial.linesRemovedByYearMonth {
-                linesRemovedByYearMonth[period, default: 0] += removed
-            }
-
-            for (day, delta) in partial.dailyNetLoc {
-                dailyNetLoc[day, default: 0] += delta
-            }
-
-            for (path, day) in partial.firstSeenDayForFile {
-                if fileSet.contains(path) {
-                    continue
-                }
-                if let existingDay = firstSeenDayForFile[path] {
-                    if day < existingDay {
-                        firstSeenDayForFile[path] = day
-                    }
-                } else {
-                    firstSeenDayForFile[path] = day
-                }
-            }
-        }
-
-        var clampedProcessed = parsedCommits.count
-        progressQueue.sync {
-            processedChunks += 1
-            let processedSoFar = processedChunks * chunkSize
-            clampedProcessed = min(processedSoFar, parsedCommits.count)
-        }
-        progress?(ProgressUpdate(stage: .processing, processed: clampedProcessed, total: parsedCommits.count))
+        progress?(ProgressUpdate(stage: .processing, processed: parsedCommits.count, total: parsedCommits.count))
         Task { @MainActor in
             self.project.progressStage = "processing"
-            self.project.progressProcessed = clampedProcessed
+            self.project.progressProcessed = parsedCommits.count
             self.project.progressTotal = parsedCommits.count
-        }
-
-        if !dailyNetLoc.isEmpty {
-            let sortedDays = dailyNetLoc.keys.sorted()
-            for day in sortedDays {
-                currentLoc = max(0, currentLoc + dailyNetLoc[day]!)
-                locByDate[day] = currentLoc
-            }
-        }
-
-        if !firstSeenDayForFile.isEmpty {
-            var currentFileCount = fileSet.count
-            var newFilesByDay: [String: Int] = [:]
-            for (_, day) in firstSeenDayForFile {
-                newFilesByDay[day, default: 0] += 1
-            }
-
-            for day in newFilesByDay.keys.sorted() {
-                currentFileCount += newFilesByDay[day] ?? 0
-                filesByDate[day] = currentFileCount
-            }
-            fileSet.formUnion(firstSeenDayForFile.keys)
         }
 
         progress?(ProgressUpdate(stage: .processing, processed: parsedCommits.count, total: parsedCommits.count))
@@ -362,32 +175,28 @@ class GitStatsEngine {
             self.project.progressProcessed = parsedCommits.count
             self.project.progressTotal = parsedCommits.count
         }
-        let aggregateDuration = Date().timeIntervalSince(aggregateStart)
+        print("⏱ Aggregate stage finished in \(fmt(aggregateDuration))")
 
         let commits = parsedCommits.map { $0.commit }
 
         let snapshotStart = Date()
-        let snapshot: SnapshotStats?
-        if let lastTreeHash = parsedCommits.last?.commit.treeHash {
-            let snapshotStats = repository.calculateSnapshotStats(treeHash: lastTreeHash)
-            snapshot = SnapshotStats(
-                fileCount: snapshotStats.files,
-                lineCount: snapshotStats.lines,
-                extensions: snapshotStats.extensions,
-                totalSize: snapshotStats.size
-            )
-        } else {
-            snapshot = nil
-        }
+        let snapshot = Self.buildSnapshot(
+            fileStats: fileStats,
+            fileSet: fileSet,
+            currentLoc: currentLoc
+        )
         let snapshotDuration = Date().timeIntervalSince(snapshotStart)
+        print("⏱ Snapshot stage finished in \(fmt(snapshotDuration))")
 
         let timezoneStart = Date()
         let commitsByTimezone = Self.calculateTimezone(commits: commits)
         let timezoneDuration = Date().timeIntervalSince(timezoneStart)
+        print("⏱ Timezone stage finished in \(fmt(timezoneDuration))")
 
         let tagsStart = Date()
         let tags = Self.calculateTags(repository: repository, commits: commits)
         let tagsDuration = Date().timeIntervalSince(tagsStart)
+        print("⏱ Tags stage finished in \(fmt(tagsDuration))")
 
         let reportStart = Date()
         let statsPath = try await generateHTMLReport(
@@ -411,7 +220,6 @@ class GitStatsEngine {
         let reportDuration = Date().timeIntervalSince(reportStart)
         let totalDuration = Date().timeIntervalSince(totalStart)
 
-        func fmt(_ t: TimeInterval) -> String { String(format: "%.3fs", t) }
         print("⏱ Timing => fetch: \(fmt(fetchDuration)), init: \(fmt(initDataDuration)), aggregate: \(fmt(aggregateDuration)), snapshot: \(fmt(snapshotDuration)), tz: \(fmt(timezoneDuration)), tags: \(fmt(tagsDuration)), report: \(fmt(reportDuration)), total: \(fmt(totalDuration))")
 
         let cacheToSave = StatsCache(
@@ -446,85 +254,126 @@ class GitStatsEngine {
         return statsPath
     }
 
-    private func generateHTMLReport(
-        totalCommits: Int,
-        totalLinesAdded: Int,
-        totalLinesRemoved: Int,
-        authors: [String: (name: String, email: String, commits: Int, added: Int, removed: Int, firstDate: Date?, lastDate: Date?)],
-        commits: [GitCommit],
-        files: [String: (commits: Int, added: Int, removed: Int)],
-        snapshot: SnapshotStats?,
-        filesByDate: [String: Int],
-        locByDate: [String: Int],
-        linesAddedByYear: [String: Int],
-        linesRemovedByYear: [String: Int],
-        linesAddedByYearMonth: [String: Int],
-        linesRemovedByYearMonth: [String: Int],
-        generatedAt: Date,
-        commitsByTimezone: [Int: Int],
-        tags: [TagStats]
-    ) async throws -> String {
-        let statsPath = project.statsPath
-        let reportGenerator = HTMLReportGenerator(statsPath: statsPath)
+    private func aggregateCommits(
+        parsedCommits: [GitRepository.ParsedCommitNumstat],
+        authorStats: inout [String: AuthorAgg],
+        fileStats: inout [String: FileAgg],
+        fileSet: inout Set<String>,
+        filesByDate: inout [String: Int],
+        locByDate: inout [String: Int],
+        linesAddedByYear: inout [String: Int],
+        linesRemovedByYear: inout [String: Int],
+        linesAddedByYearMonth: inout [String: Int],
+        linesRemovedByYearMonth: inout [String: Int],
+        totalCommits: inout Int,
+        totalLinesAdded: inout Int,
+        totalLinesRemoved: inout Int,
+        currentLoc: inout Int
+    ) -> TimeInterval {
+        let aggregateStart = Date()
+        var dailyNetLoc: [String: Int] = [:]
+        var firstSeenDayForFile: [String: String] = [:]
 
-        try reportGenerator.generateReport(
-            projectName: project.displayName,
-            totalCommits: totalCommits,
-            totalAuthors: authors.count,
-            totalFiles: snapshot?.fileCount ?? files.count,
-            totalLinesOfCode: snapshot?.lineCount ?? 0,
-            totalLinesAdded: totalLinesAdded,
-            totalLinesRemoved: totalLinesRemoved,
-            authors: authors,
-            commits: commits,
-            files: files,
-            snapshot: snapshot,
-            filesByDate: filesByDate,
-            locByDate: locByDate,
-            linesAddedByYear: linesAddedByYear,
-            linesRemovedByYear: linesRemovedByYear,
-            linesAddedByYearMonth: linesAddedByYearMonth,
-            linesRemovedByYearMonth: linesRemovedByYearMonth,
-            generatedAt: generatedAt,
-            commitsByTimezone: commitsByTimezone,
-            tags: tags
+        let calendar = Calendar(identifier: .gregorian)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+
+        for entry in parsedCommits {
+            totalCommits += 1
+            let commit = entry.commit
+            let dayKey = formatter.string(from: calendar.startOfDay(for: commit.authorDate))
+
+            let commitAdded = entry.numstats.reduce(0) { $0 + $1.added }
+            let commitRemoved = entry.numstats.reduce(0) { $0 + $1.removed }
+
+            let authorKey = "\(commit.authorName) <\(commit.authorEmail)>"
+            var stats = authorStats[authorKey] ?? (commit.authorName, commit.authorEmail, 0, 0, 0, commit.authorDate, commit.authorDate)
+            stats.commits += 1
+            stats.added += commitAdded
+            stats.removed += commitRemoved
+            stats.firstDate = stats.firstDate.map { min($0, commit.authorDate) } ?? commit.authorDate
+            stats.lastDate = stats.lastDate.map { max($0, commit.authorDate) } ?? commit.authorDate
+            authorStats[authorKey] = stats
+
+            totalLinesAdded += commitAdded
+            totalLinesRemoved += commitRemoved
+            dailyNetLoc[dayKey, default: 0] += commitAdded - commitRemoved
+
+            let dateComponents = calendar.dateComponents([.year, .month], from: commit.authorDate)
+            if let year = dateComponents.year {
+                let yearKey = String(format: "%04d", year)
+                linesAddedByYear[yearKey, default: 0] += commitAdded
+                linesRemovedByYear[yearKey, default: 0] += commitRemoved
+                if let month = dateComponents.month {
+                    let ymKey = String(format: "%04d-%02d", year, month)
+                    linesAddedByYearMonth[ymKey, default: 0] += commitAdded
+                    linesRemovedByYearMonth[ymKey, default: 0] += commitRemoved
+                }
+            }
+
+            for numstat in entry.numstats {
+                var fstats = fileStats[numstat.path] ?? (0, 0, 0)
+                fstats.commits += 1
+                fstats.added += numstat.added
+                fstats.removed += numstat.removed
+                fileStats[numstat.path] = fstats
+
+                guard !fileSet.contains(numstat.path) else { continue }
+                if let existingDay = firstSeenDayForFile[numstat.path] {
+                    if dayKey < existingDay {
+                        firstSeenDayForFile[numstat.path] = dayKey
+                    }
+                } else {
+                    firstSeenDayForFile[numstat.path] = dayKey
+                }
+            }
+        }
+
+        if !dailyNetLoc.isEmpty {
+            let sortedDays = dailyNetLoc.keys.sorted()
+            for day in sortedDays {
+                currentLoc = max(0, currentLoc + dailyNetLoc[day]!)
+                locByDate[day] = currentLoc
+            }
+        }
+
+        if !firstSeenDayForFile.isEmpty {
+            var currentFileCount = fileSet.count
+            var newFilesByDay: [String: Int] = [:]
+            for (_, day) in firstSeenDayForFile {
+                newFilesByDay[day, default: 0] += 1
+            }
+
+            for day in newFilesByDay.keys.sorted() {
+                currentFileCount += newFilesByDay[day] ?? 0
+                filesByDate[day] = currentFileCount
+            }
+            fileSet.formUnion(firstSeenDayForFile.keys)
+        }
+
+        return Date().timeIntervalSince(aggregateStart)
+    }
+
+    private static func buildSnapshot(
+        fileStats: [String: (commits: Int, added: Int, removed: Int)],
+        fileSet: Set<String>,
+        currentLoc: Int
+    ) -> SnapshotStats {
+        var extStats: [String: (files: Int, lines: Int)] = [:]
+        for (path, stats) in fileStats {
+            let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+            let key = ext.isEmpty ? "no-extension" : ext
+            var entry = extStats[key] ?? (0, 0)
+            entry.files += 1
+            let net = stats.added - stats.removed
+            if net > 0 { entry.lines += net }
+            extStats[key] = entry
+        }
+        return SnapshotStats(
+            fileCount: fileSet.count,
+            lineCount: currentLoc,
+            extensions: extStats
         )
-
-        return statsPath
-    }
-
-    private func loadStatsCache() -> StatsCache? {
-        guard FileManager.default.fileExists(atPath: cacheURL.path) else { return nil }
-        do {
-            let data = try Data(contentsOf: cacheURL)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode(StatsCache.self, from: data)
-        } catch {
-            print("⚠️ Failed to load stats cache: \(error)")
-            return nil
-        }
-    }
-
-    private func saveStatsCache(_ cache: StatsCache) {
-        do {
-            try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(cache)
-            try data.write(to: cacheURL, options: .atomic)
-        } catch {
-            print("⚠️ Failed to save stats cache: \(error)")
-        }
-    }
-
-    private static func calculateTimezone(commits: [GitCommit]) -> [Int: Int] {
-        var buckets: [Int: Int] = [:]
-        for commit in commits {
-            let offset = commit.authorTimeZoneOffsetMinutes ?? 0
-            buckets[offset, default: 0] += 1
-        }
-        return buckets
     }
 
     private static func calculateTags(repository: GitRepository, commits: [GitCommit]) -> [TagStats] {
@@ -608,6 +457,87 @@ class GitStatsEngine {
         }
 
         return result
+    }
+
+    private static func calculateTimezone(commits: [GitCommit]) -> [Int: Int] {
+        var buckets: [Int: Int] = [:]
+        for commit in commits {
+            let offset = commit.authorTimeZoneOffsetMinutes ?? 0
+            buckets[offset, default: 0] += 1
+        }
+        return buckets
+    }
+
+    private func generateHTMLReport(
+        totalCommits: Int,
+        totalLinesAdded: Int,
+        totalLinesRemoved: Int,
+        authors: [String: (name: String, email: String, commits: Int, added: Int, removed: Int, firstDate: Date?, lastDate: Date?)],
+        commits: [GitCommit],
+        files: [String: (commits: Int, added: Int, removed: Int)],
+        snapshot: SnapshotStats?,
+        filesByDate: [String: Int],
+        locByDate: [String: Int],
+        linesAddedByYear: [String: Int],
+        linesRemovedByYear: [String: Int],
+        linesAddedByYearMonth: [String: Int],
+        linesRemovedByYearMonth: [String: Int],
+        generatedAt: Date,
+        commitsByTimezone: [Int: Int],
+        tags: [TagStats]
+    ) async throws -> String {
+        let statsPath = project.statsPath
+        let reportGenerator = HTMLReportGenerator(statsPath: statsPath)
+
+        try reportGenerator.generateReport(
+            projectName: project.displayName,
+            totalCommits: totalCommits,
+            totalAuthors: authors.count,
+            totalFiles: snapshot?.fileCount ?? files.count,
+            totalLinesOfCode: snapshot?.lineCount ?? 0,
+            totalLinesAdded: totalLinesAdded,
+            totalLinesRemoved: totalLinesRemoved,
+            authors: authors,
+            commits: commits,
+            files: files,
+            snapshot: snapshot,
+            filesByDate: filesByDate,
+            locByDate: locByDate,
+            linesAddedByYear: linesAddedByYear,
+            linesRemovedByYear: linesRemovedByYear,
+            linesAddedByYearMonth: linesAddedByYearMonth,
+            linesRemovedByYearMonth: linesRemovedByYearMonth,
+            generatedAt: generatedAt,
+            commitsByTimezone: commitsByTimezone,
+            tags: tags
+        )
+
+        return statsPath
+    }
+
+    private func loadStatsCache() -> StatsCache? {
+        guard FileManager.default.fileExists(atPath: cacheURL.path) else { return nil }
+        do {
+            let data = try Data(contentsOf: cacheURL)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode(StatsCache.self, from: data)
+        } catch {
+            print("⚠️ Failed to load stats cache: \(error)")
+            return nil
+        }
+    }
+
+    private func saveStatsCache(_ cache: StatsCache) {
+        do {
+            try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(cache)
+            try data.write(to: cacheURL, options: .atomic)
+        } catch {
+            print("⚠️ Failed to save stats cache: \(error)")
+        }
     }
 
 }
