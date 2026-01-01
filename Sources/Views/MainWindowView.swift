@@ -43,9 +43,6 @@ struct MainWindowView: View {
                 ToolbarItem(placement: .automatic) {
                     Button("Regenerate", systemImage: "arrow.clockwise") {
                         project.isGeneratingStats = true
-                        project.progressStage = "scanning"
-                        project.progressProcessed = 0
-                        project.progressTotal = 0
                         try? modelContext.save()
                         StatsGenerator.generate(for: project, context: modelContext, forceFullRebuild: true, completion: { result in
                             if case let .failure(error) = result {

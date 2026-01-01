@@ -82,9 +82,6 @@ class DataController: Observable {
         var changed = false
         for project in all where project.isGeneratingStats {
             project.isGeneratingStats = false
-            project.progressStage = "idle"
-            project.progressProcessed = 0
-            project.progressTotal = 0
             changed = true
         }
         if changed {

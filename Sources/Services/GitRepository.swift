@@ -199,7 +199,7 @@ class GitRepository {
         let numstats: [(path: String, added: Int, removed: Int)]
     }
 
-    func getCommitsWithNumstat(since: String? = nil, progress: ((Int, Int) -> Void)? = nil) -> [ParsedCommitNumstat] {
+    func getCommitsWithNumstat(since: String? = nil) -> [ParsedCommitNumstat] {
         var arguments = [
             "-c", "log.showSignature=false",
             "log",
@@ -226,9 +226,7 @@ class GitRepository {
         var currentCommit: GitCommit?
         var currentNumstats: [(String, Int, Int)] = []
 
-        var index = 0
         let lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
-        let totalCommits = lines.filter { $0.contains("\u{02}") }.count
 
         for line in lines {
             if line.contains("\u{02}") {
@@ -269,10 +267,6 @@ class GitRepository {
                     committerDate: committerDate,
                     message: message
                 )
-                index += 1
-                if index % 50 == 0 || index == totalCommits {
-                    progress?(index, totalCommits)
-                }
             } else if line.isEmpty {
                 continue
             } else if line.contains("\t") {
@@ -292,7 +286,7 @@ class GitRepository {
         return results
     }
 
-    func getAllCommits(progress: ((Int, Int) -> Void)? = nil) -> [GitCommit] {
+    func getAllCommits() -> [GitCommit] {
         let result = runGit([
             "-c", "log.showSignature=false",
             "log",
@@ -310,9 +304,8 @@ class GitRepository {
         let text = String(decoding: result.data, as: UTF8.self)
         var commits: [GitCommit] = []
         let lines = text.split(whereSeparator: \.isNewline)
-        let total = lines.count
 
-        for (idx, line) in lines.enumerated() {
+        for line in lines {
             let header = line.replacingOccurrences(of: "\u{02}", with: "")
             let parts = header.split(separator: "\u{01}", omittingEmptySubsequences: false)
             guard parts.count >= 12 else { continue }
@@ -336,10 +329,6 @@ class GitRepository {
                 message: String(parts[11])
             )
             commits.append(commit)
-
-            if idx % 50 == 0 || idx + 1 == total {
-                progress?(idx + 1, total)
-            }
         }
 
         return commits

@@ -15,23 +15,13 @@ class GitStatsEngine {
         URL(fileURLWithPath: project.statsPath).appendingPathComponent("stats_cache.json")
     }
 
-    struct ProgressUpdate {
-        enum Stage {
-            case scanning
-            case processing
-        }
-        let stage: Stage
-        let processed: Int
-        let total: Int
-    }
-
     init(project: Project, context: ModelContext) {
         self.project = project
         self.context = context
         self.repository = GitRepository(path: project.path!)!
     }
 
-    func generateStats(forceFullRebuild: Bool = false, progress: ((ProgressUpdate) -> Void)? = nil) async throws -> String {
+    func generateStats(forceFullRebuild: Bool = false) async throws -> String {
         print("🚀 GitStatsEngine.generateStats() started")
         let generatedAt = Date()
         func fmt(_ t: TimeInterval) -> String { String(format: "%.3fs", t) }
@@ -75,22 +65,9 @@ class GitStatsEngine {
 
         let totalStart = Date()
         print("📊 Fetching commits\(isIncremental ? " (incremental since \(sinceCommit!))" : "")...")
-        progress?(ProgressUpdate(stage: .scanning, processed: 0, total: 0))
-        await MainActor.run {
-            project.progressStage = "scanning"
-            project.progressProcessed = 0
-            project.progressTotal = 0
-        }
 
         let fetchStart = Date()
-        let parsedCommits = repository.getCommitsWithNumstat(since: sinceCommit) { processed, total in
-            progress?(ProgressUpdate(stage: .scanning, processed: processed, total: total))
-            Task { @MainActor in
-                self.project.progressStage = "scanning"
-                self.project.progressProcessed = processed
-                self.project.progressTotal = total
-            }
-        }
+        let parsedCommits = repository.getCommitsWithNumstat(since: sinceCommit)
         let fetchDuration = Date().timeIntervalSince(fetchStart)
 
         generatedCommitHash = parsedCommits.last?.commit.hash ?? lastCachedCommit ?? repository.currentCommitHash
@@ -101,13 +78,6 @@ class GitStatsEngine {
         if isIncremental && parsedCommits.isEmpty {
             print("⚡️ No new commits since last generation")
             return project.statsPath
-        }
-
-        progress?(ProgressUpdate(stage: .processing, processed: 0, total: parsedCommits.count))
-        await MainActor.run {
-            project.progressStage = "processing"
-            project.progressProcessed = 0
-            project.progressTotal = parsedCommits.count
         }
 
         let initDataStart = Date()
@@ -145,7 +115,7 @@ class GitStatsEngine {
         let initDataDuration = Date().timeIntervalSince(initDataStart)
 
         print("📈 Aggregating results...")
-        let aggregateDuration = aggregateCommits(
+        let aggregateDuration = Self.aggregateCommits(
             parsedCommits: parsedCommits,
             authorStats: &authorStats,
             fileStats: &fileStats,
@@ -162,19 +132,6 @@ class GitStatsEngine {
             currentLoc: &currentLoc
         )
 
-        progress?(ProgressUpdate(stage: .processing, processed: parsedCommits.count, total: parsedCommits.count))
-        Task { @MainActor in
-            self.project.progressStage = "processing"
-            self.project.progressProcessed = parsedCommits.count
-            self.project.progressTotal = parsedCommits.count
-        }
-
-        progress?(ProgressUpdate(stage: .processing, processed: parsedCommits.count, total: parsedCommits.count))
-        Task { @MainActor in
-            self.project.progressStage = "done"
-            self.project.progressProcessed = parsedCommits.count
-            self.project.progressTotal = parsedCommits.count
-        }
         print("⏱ Aggregate stage finished in \(fmt(aggregateDuration))")
 
         let commits = parsedCommits.map { $0.commit }
@@ -254,7 +211,7 @@ class GitStatsEngine {
         return statsPath
     }
 
-    private func aggregateCommits(
+    private static func aggregateCommits(
         parsedCommits: [GitRepository.ParsedCommitNumstat],
         authorStats: inout [String: AuthorAgg],
         fileStats: inout [String: FileAgg],

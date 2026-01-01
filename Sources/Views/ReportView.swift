@@ -8,16 +8,13 @@ struct ReportView: View {
     @State private var isGeneratingStats = false
     @State private var statsPath: String?
     @State private var error: String?
-    @State private var processedCommits: Int = 0
-    @State private var totalCommits: Int = 0
-    @State private var stage: GitStatsEngine.ProgressUpdate.Stage = .scanning
     
     var body: some View {
         ZStack {
             if let path = statsPath {
                 WebReportView(statsPath: path)
             } else if isGeneratingStats {
-                GeneratingStatsView(processed: processedCommits, total: totalCommits, stage: stage)
+                GeneratingStatsView()
             } else if let err = error {
                 ErrorView(error: err) {
                     Task {
@@ -33,19 +30,15 @@ struct ReportView: View {
             }
         }
         .onAppear {
-            syncProgressFromProject()
+            isGeneratingStats = project.isGeneratingStats
             loadCachedReportIfAvailable()
             Task { await ensureFreshReport() }
         }
         .onChange(of: project.isGeneratingStats) { generating in
             isGeneratingStats = generating
             if !generating {
-                syncProgressFromProject()
                 refreshReportView()
             }
-        }
-        .onChange(of: project.progressStage) { _ in
-            syncProgressFromProject()
         }
         .onChange(of: project.lastGeneratedCommit) { _ in
             refreshReportView()
@@ -55,23 +48,14 @@ struct ReportView: View {
     private func generateStats() async {
         isGeneratingStats = statsPath == nil
         error = nil
-        syncProgressFromProject()
         
         StatsGenerator.generate(
             for: project,
             context: modelContext,
-            progress: { update in
-                Task { @MainActor in
-                    processedCommits = update.processed
-                    totalCommits = update.total
-                    stage = update.stage
-                }
-            },
             completion: { result in
             switch result {
             case .success(let path):
                 statsPath = path
-                stage = .processing
             case .failure(let generationError):
                 error = generationError.localizedDescription
             }
@@ -93,12 +77,6 @@ struct ReportView: View {
         } else {
             statsPath = path
         }
-    }
-
-    private func syncProgressFromProject() {
-        processedCommits = project.progressProcessed
-        totalCommits = project.progressTotal
-        stage = stageFromProject()
     }
 
     private func loadCachedReportIfAvailable() {
@@ -141,17 +119,6 @@ struct ReportView: View {
             return nil
         }
     }
-
-    private func stageFromProject() -> GitStatsEngine.ProgressUpdate.Stage {
-        switch project.progressStage {
-        case "processing":
-            return .processing
-        case "scanning":
-            return .scanning
-        default:
-            return .scanning
-        }
-    }
 }
 
 struct WebReportView: NSViewRepresentable {
@@ -188,39 +155,17 @@ struct WebReportView: NSViewRepresentable {
 }
 
 struct GeneratingStatsView: View {
-    let processed: Int
-    let total: Int
-    let stage: GitStatsEngine.ProgressUpdate.Stage
-
     var body: some View {
         VStack(spacing: 24) {
             ProgressView()
                 .scaleEffect(1.5)
-            Text(stageText)
+            Text("Generating statistics...")
                 .font(.headline)
             Text("This may take a while for large repositories")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-            
-            if total > 0 {
-                ProgressView(value: Double(processed), total: Double(total))
-                    .progressViewStyle(.linear)
-                    .frame(maxWidth: 320)
-                Text("\(processed)/\(total) commits processed")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var stageText: String {
-        switch stage {
-        case .scanning:
-            return "Analyzing Git Repository..."
-        case .processing:
-            return "Processing commit diffs..."
-        }
     }
 }
 

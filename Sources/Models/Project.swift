@@ -15,9 +15,6 @@ final class Project {
     var lastGeneratedCommit: String?
     var createdAt: Date
     var updatedAt: Date
-    @Transient var progressStage: String = "idle"
-    @Transient var progressProcessed: Int = 0
-    @Transient var progressTotal: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \Project.children)
     var parent: Project?
