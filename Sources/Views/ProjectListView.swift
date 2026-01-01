@@ -116,7 +116,7 @@ struct ProjectRow: View {
                     .textFieldStyle(.roundedBorder)
                     .autocorrectionDisabled()
                     .onAppear {
-                        editingName = project.name ?? ""
+                        editingName = project.displayName
                     }
                     .onSubmit {
                         project.name = editingName.isEmpty ? nil : editingName
