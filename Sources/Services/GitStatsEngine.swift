@@ -22,29 +22,29 @@ class GitStatsEngine {
     }
 
     func generateStats(forceFullRebuild: Bool = false) async throws -> String {
-        print("🚀 GitStatsEngine.generateStats() started")
         let generatedAt = Date()
-        func fmt(_ t: TimeInterval) -> String { String(format: "%.3fs", t) }
 
         if !forceFullRebuild,
            let last = project.lastGeneratedCommit,
            let head = repository.currentCommitHash,
            last == head,
            project.statsExists {
-            print("⚡️ Stats up-to-date, skipping regeneration")
             return project.statsPath
         }
 
         await MainActor.run {
             project.isGeneratingStats = true
+            project.progressStage = "Preparing"
+            project.progressDetail = nil
             try? context.save()
         }
 
         defer {
-            print("🏁 GitStatsEngine.generateStats() finished")
             let commitToRecord = generatedCommitHash ?? repository.currentCommitHash
             Task { @MainActor in
                 project.isGeneratingStats = false
+                project.progressStage = nil
+                project.progressDetail = nil
                 project.lastGeneratedCommit = commitToRecord
                 try? self.context.save()
             }
@@ -63,24 +63,34 @@ class GitStatsEngine {
 
         let sinceCommit: String? = isIncremental ? lastCachedCommit : nil
 
-        let totalStart = Date()
-        print("📊 Fetching commits\(isIncremental ? " (incremental since \(sinceCommit!))" : "")...")
+        setProgress(stage: "Fetching commits", detail: isIncremental ? "Incremental from \(sinceCommit!)" : nil)
 
-        let fetchStart = Date()
-        let parsedCommits = repository.getCommitsWithNumstat(since: sinceCommit)
-        let fetchDuration = Date().timeIntervalSince(fetchStart)
+        var lastProgressCommit = 0
+        let parsedCommits = repository.getCommitsWithNumstat(since: sinceCommit) { processed, total in
+            if processed != 1 && processed - lastProgressCommit < 500 {
+                if let total = total, processed == total {
+                    // final progress update
+                } else {
+                    return
+                }
+            }
+            lastProgressCommit = processed
+            if let total = total, total > 0 {
+                let percent = Double(processed) * 100.0 / Double(total)
+                self.updateProgressDetail(String(format: "Fetching commits %d/%d (%.1f%%)", processed, total, percent))
+            } else {
+                self.updateProgressDetail("Fetching commits \(processed)")
+            }
+        }
 
         generatedCommitHash = parsedCommits.last?.commit.hash ?? lastCachedCommit ?? repository.currentCommitHash
-        print("✅ Found \(parsedCommits.count) commits")
-        print("⏱ Fetch stage finished in \(fmt(fetchDuration))")
 
         // 如果是增量处理且没有新提交，直接返回
         if isIncremental && parsedCommits.isEmpty {
-            print("⚡️ No new commits since last generation")
+            setProgress(stage: "Fetching commits", detail: "No new commits since last generation")
             return project.statsPath
         }
 
-        let initDataStart = Date()
         var authorStats: [String: AuthorAgg] = [:]
         var fileStats: [String: FileAgg] = [:]
         var fileSet = Set<String>()
@@ -112,10 +122,8 @@ class GitStatsEngine {
             }
             fileStats = cache.fileStats.mapValues { (commits: $0.commits, added: $0.added, removed: $0.removed) }
         }
-        let initDataDuration = Date().timeIntervalSince(initDataStart)
-
-        print("📈 Aggregating results...")
-        let aggregateDuration = Self.aggregateCommits(
+        setProgress(stage: "Aggregating results", detail: nil)
+        Self.aggregateCommits(
             parsedCommits: parsedCommits,
             authorStats: &authorStats,
             fileStats: &fileStats,
@@ -132,30 +140,23 @@ class GitStatsEngine {
             currentLoc: &currentLoc
         )
 
-        print("⏱ Aggregate stage finished in \(fmt(aggregateDuration))")
-
         let commits = parsedCommits.map { $0.commit }
 
-        let snapshotStart = Date()
+        setProgress(stage: "Building snapshot", detail: nil)
         let snapshot = Self.buildSnapshot(
             fileStats: fileStats,
             fileSet: fileSet,
             currentLoc: currentLoc
         )
-        let snapshotDuration = Date().timeIntervalSince(snapshotStart)
-        print("⏱ Snapshot stage finished in \(fmt(snapshotDuration))")
 
-        let timezoneStart = Date()
+        setProgress(stage: "Calculating timezone", detail: nil)
         let commitsByTimezone = Self.calculateTimezone(commits: commits)
-        let timezoneDuration = Date().timeIntervalSince(timezoneStart)
-        print("⏱ Timezone stage finished in \(fmt(timezoneDuration))")
 
-        let tagsStart = Date()
+        setProgress(stage: "Calculating tags", detail: nil)
         let tags = Self.calculateTags(repository: repository, commits: commits)
-        let tagsDuration = Date().timeIntervalSince(tagsStart)
-        print("⏱ Tags stage finished in \(fmt(tagsDuration))")
 
-        let reportStart = Date()
+        let hourTimezoneLabel = HTMLReportGenerator.hourTimezoneLabel()
+        setProgress(stage: "Generating report", detail: nil)
         let statsPath = try await generateHTMLReport(
             totalCommits: totalCommits,
             totalLinesAdded: totalLinesAdded,
@@ -172,12 +173,9 @@ class GitStatsEngine {
             linesRemovedByYearMonth: linesRemovedByYearMonth,
             generatedAt: generatedAt,
             commitsByTimezone: commitsByTimezone,
-            tags: tags
+            tags: tags,
+            hourTimezoneLabel: hourTimezoneLabel
         )
-        let reportDuration = Date().timeIntervalSince(reportStart)
-        let totalDuration = Date().timeIntervalSince(totalStart)
-
-        print("⏱ Timing => fetch: \(fmt(fetchDuration)), init: \(fmt(initDataDuration)), aggregate: \(fmt(aggregateDuration)), snapshot: \(fmt(snapshotDuration)), tz: \(fmt(timezoneDuration)), tags: \(fmt(tagsDuration)), report: \(fmt(reportDuration)), total: \(fmt(totalDuration))")
 
         let cacheToSave = StatsCache(
             lastCommit: generatedCommitHash ?? repository.currentCommitHash,
@@ -211,6 +209,19 @@ class GitStatsEngine {
         return statsPath
     }
 
+    private func setProgress(stage: String, detail: String?) {
+        Task { @MainActor in
+            project.progressStage = stage
+            project.progressDetail = detail
+        }
+    }
+
+    private func updateProgressDetail(_ detail: String?) {
+        Task { @MainActor in
+            project.progressDetail = detail
+        }
+    }
+
     private static func aggregateCommits(
         parsedCommits: [GitRepository.ParsedCommitNumstat],
         authorStats: inout [String: AuthorAgg],
@@ -226,8 +237,7 @@ class GitStatsEngine {
         totalLinesAdded: inout Int,
         totalLinesRemoved: inout Int,
         currentLoc: inout Int
-    ) -> TimeInterval {
-        let aggregateStart = Date()
+    ) {
         var dailyNetLoc: [String: Int] = [:]
         var firstSeenDayForFile: [String: String] = [:]
 
@@ -308,7 +318,6 @@ class GitStatsEngine {
             fileSet.formUnion(firstSeenDayForFile.keys)
         }
 
-        return Date().timeIntervalSince(aggregateStart)
     }
 
     private static func buildSnapshot(
@@ -441,7 +450,8 @@ class GitStatsEngine {
         linesRemovedByYearMonth: [String: Int],
         generatedAt: Date,
         commitsByTimezone: [Int: Int],
-        tags: [TagStats]
+        tags: [TagStats],
+        hourTimezoneLabel: String
     ) async throws -> String {
         let statsPath = project.statsPath
         let reportGenerator = HTMLReportGenerator(statsPath: statsPath)
@@ -466,7 +476,8 @@ class GitStatsEngine {
             linesRemovedByYearMonth: linesRemovedByYearMonth,
             generatedAt: generatedAt,
             commitsByTimezone: commitsByTimezone,
-            tags: tags
+            tags: tags,
+            hourTimezoneLabel: hourTimezoneLabel
         )
 
         return statsPath
@@ -480,7 +491,6 @@ class GitStatsEngine {
             decoder.dateDecodingStrategy = .iso8601
             return try decoder.decode(StatsCache.self, from: data)
         } catch {
-            print("⚠️ Failed to load stats cache: \(error)")
             return nil
         }
     }
@@ -493,7 +503,6 @@ class GitStatsEngine {
             let data = try encoder.encode(cache)
             try data.write(to: cacheURL, options: .atomic)
         } catch {
-            print("⚠️ Failed to save stats cache: \(error)")
         }
     }
 

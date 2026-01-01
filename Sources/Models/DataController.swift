@@ -82,6 +82,8 @@ class DataController: Observable {
         var changed = false
         for project in all where project.isGeneratingStats {
             project.isGeneratingStats = false
+            project.progressStage = nil
+            project.progressDetail = nil
             changed = true
         }
         if changed {

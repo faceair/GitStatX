@@ -199,7 +199,24 @@ class GitRepository {
         let numstats: [(path: String, added: Int, removed: Int)]
     }
 
-    func getCommitsWithNumstat(since: String? = nil) -> [ParsedCommitNumstat] {
+    func getCommitsWithNumstat(
+        since: String? = nil,
+        progress: ((Int, Int?) -> Void)? = nil
+    ) -> [ParsedCommitNumstat] {
+        var countTotal: Int?
+        if progress != nil {
+            var countArgs: [String] = ["rev-list", "--count", "--all"]
+            if let since = since {
+                countArgs.insert("\(since)..HEAD", at: 1)
+            }
+            let countResult = runGit(countArgs)
+            if countResult.status == 0 {
+                let rawCount = String(decoding: countResult.data, as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                countTotal = Int(rawCount)
+            }
+        }
+
         var arguments = [
             "-c", "log.showSignature=false",
             "log",
@@ -217,18 +234,29 @@ class GitRepository {
             arguments.insert("\(since)..HEAD", at: 3)
         }
 
-        let result = runGit(arguments)
-        guard result.status == 0 else { return [] }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.currentDirectoryURL = URL(fileURLWithPath: path)
+        process.arguments = ["git"] + arguments
+        process.standardError = Pipe()
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
 
-        let text = String(decoding: result.data, as: UTF8.self)
+        do {
+            try process.run()
+        } catch {
+            return []
+        }
+
+        let handle = outputPipe.fileHandleForReading
+        var buffer = Data()
         var results: [ParsedCommitNumstat] = []
 
         var currentCommit: GitCommit?
         var currentNumstats: [(String, Int, Int)] = []
+        var processedCommits = 0
 
-        let lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
-
-        for line in lines {
+        func handleLine(_ line: String) {
             if line.contains("\u{02}") {
                 if let commit = currentCommit {
                     results.append(ParsedCommitNumstat(commit: commit, numstats: currentNumstats))
@@ -237,7 +265,7 @@ class GitRepository {
 
                 let header = line.replacingOccurrences(of: "\u{02}", with: "")
                 let parts = header.split(separator: "\u{01}", omittingEmptySubsequences: false)
-                guard parts.count >= 12 else { continue }
+                guard parts.count >= 12 else { return }
 
                 let hash = String(parts[0])
                 let tree = String(parts[1])
@@ -267,17 +295,44 @@ class GitRepository {
                     committerDate: committerDate,
                     message: message
                 )
+
+                processedCommits += 1
+                progress?(processedCommits, countTotal)
             } else if line.isEmpty {
-                continue
+                return
             } else if line.contains("\t") {
                 let fields = line.split(separator: "\t", maxSplits: 2)
-                guard fields.count == 3 else { continue }
+                guard fields.count == 3 else { return }
                 let added = Int(fields[0]) ?? 0
                 let removed = Int(fields[1]) ?? 0
                 let path = String(fields[2])
                 currentNumstats.append((path, added, removed))
             }
         }
+
+        while true {
+            let chunk = handle.readData(ofLength: 64 * 1024)
+            if chunk.isEmpty {
+                break
+            }
+            buffer.append(chunk)
+
+            while let newlineIndex = buffer.firstIndex(of: 0x0A) {
+                let lineData = buffer.prefix(upTo: newlineIndex)
+                buffer.removeSubrange(buffer.startIndex...newlineIndex)
+                if let line = String(data: lineData, encoding: .utf8) {
+                    handleLine(line)
+                }
+            }
+        }
+
+        process.waitUntilExit()
+
+        if !buffer.isEmpty, let lastLine = String(data: buffer, encoding: .utf8) {
+            handleLine(lastLine)
+        }
+
+        guard process.terminationStatus == 0 else { return [] }
 
         if let commit = currentCommit {
             results.append(ParsedCommitNumstat(commit: commit, numstats: currentNumstats))

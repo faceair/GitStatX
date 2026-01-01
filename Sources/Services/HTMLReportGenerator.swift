@@ -48,6 +48,18 @@ class HTMLReportGenerator {
         self.statsPath = statsPath
     }
 
+    static func hourTimezoneLabel() -> String {
+        let tz = TimeZone.current
+        let seconds = tz.secondsFromGMT()
+        let hours = seconds / 3600
+        let minutes = abs((seconds / 60) % 60)
+        let sign = seconds >= 0 ? "+"
+                                 : "-"
+        let offset = String(format: "UTC%@%02d:%02d", sign, abs(hours), minutes)
+        let name = tz.identifier.replacingOccurrences(of: "_", with: " ")
+        return "\(name) (\(offset))"
+    }
+
     private var resourceBundle: Bundle {
         #if SWIFT_PACKAGE
         return Bundle.module
@@ -76,23 +88,14 @@ class HTMLReportGenerator {
         linesRemovedByYearMonth: [String: Int],
         generatedAt: Date,
         commitsByTimezone: [Int: Int],
-        tags: [TagStats]
+        tags: [TagStats],
+        hourTimezoneLabel: String
     ) throws {
         guard
             let templateURL = resourceBundle.url(forResource: "report_template", withExtension: "html", subdirectory: "templates"),
             var template = try? String(contentsOf: templateURL, encoding: .utf8)
         else {
             throw ReportError.templateNotFound
-        }
-
-        let stageStart = Date()
-        var lastMark = stageStart
-        func mark(_ label: String) {
-            let now = Date()
-            let delta = now.timeIntervalSince(lastMark)
-            let total = now.timeIntervalSince(stageStart)
-            print(String(format: "⏱ Report %@: +%.3fs (%.3fs total)", label, delta, total))
-            lastMark = now
         }
 
         let dateFormatter = DateFormatter()
@@ -143,7 +146,6 @@ class HTMLReportGenerator {
         let avgCommitsPerTag = totalTags > 0 ? Double(tags.reduce(0) { $0 + $1.commits }) / Double(totalTags) : 0
         let tagGaps = tags.compactMap { $0.daysSincePrevious }
         let avgDaysBetweenTags = tagGaps.isEmpty ? 0 : Double(tagGaps.reduce(0, +)) / Double(tagGaps.count)
-        mark("derived data")
 
         template = template.replacingOccurrences(of: "{{PROJECT_NAME}}", with: projectName)
         template = template.replacingOccurrences(of: "{{TOTAL_COMMITS}}", with: totalCommits.formatted())
@@ -163,6 +165,8 @@ class HTMLReportGenerator {
         template = template.replacingOccurrences(of: "{{AVG_COMMITS_PER_TAG}}", with: String(format: "%.2f", avgCommitsPerTag))
         template = template.replacingOccurrences(of: "{{AVG_DAYS_BETWEEN_TAGS}}", with: String(format: "%.2f", avgDaysBetweenTags))
         template = template.replacingOccurrences(of: "{{GENERATED_AT}}", with: dateFormatter.string(from: generatedAt))
+        template = template.replacingOccurrences(of: "{{HOUR_TIMEZONE_LABEL}}", with: Self.escapeHTML(hourTimezoneLabel))
+        template = template.replacingOccurrences(of: "{{HOUR_TIMEZONE_LABEL_JSON}}", with: Self.escapeJSON(hourTimezoneLabel))
 
         template = template.replacingOccurrences(of: "{{AUTHORS_JSON}}", with: Self.authorsToJSON(authors: authors, dateFormatter: dateFormatter))
         template = template.replacingOccurrences(of: "{{COMMITS_JSON}}", with: Self.commitsToJSON(commits: commits, dateFormatter: dateFormatter))
@@ -200,7 +204,6 @@ class HTMLReportGenerator {
         template = template.replacingOccurrences(of: "{{AUTHOR_ROWS}}", with: Self.generateAuthorRows(authors: authors, dateFormatter: dateFormatter, totalCommits: totalCommits, activeDays: authorActiveDays))
         template = template.replacingOccurrences(of: "{{TIMEZONE_ROWS}}", with: Self.generateTimezoneRows(commitsByTimezone, totalCommits: totalCommits))
         template = template.replacingOccurrences(of: "{{TAG_ROWS}}", with: Self.generateTagRows(tags: tags))
-        mark("template replacements")
 
         let fileManager = FileManager.default
         try fileManager.createDirectory(atPath: statsPath, withIntermediateDirectories: true)
@@ -209,7 +212,6 @@ class HTMLReportGenerator {
 
         try copyChartJS()
         try copyTemplate()
-        mark("write+assets")
     }
 
     func copyTemplate() throws {
@@ -394,14 +396,20 @@ class HTMLReportGenerator {
         return active.mapValues { $0.count }
     }
 
-    private static func getTopAuthors(authors: [String: (name: String, email: String, commits: Int, added: Int, removed: Int, firstDate: Date?, lastDate: Date?)], limit: Int) -> [(name: String, commits: Int)] {
-        let authorArray = authors.values.map { ($0.name, $0.commits) }
-        let sorted = authorArray.sorted { a, b in a.1 > b.1 }
+    private static func getTopAuthors(authors: [String: (name: String, email: String, commits: Int, added: Int, removed: Int, firstDate: Date?, lastDate: Date?)], limit: Int) -> [(name: String, email: String, commits: Int)] {
+        let authorArray = authors.values.map { ($0.name, $0.email, $0.commits) }
+        let sorted = authorArray.sorted { a, b in
+            if a.2 == b.2 {
+                if a.0 == b.0 { return a.1 < b.1 }
+                return a.0 < b.0
+            }
+            return a.2 > b.2
+        }
         return Array(sorted.prefix(limit))
     }
 
-    private static func topAuthorsToJSON(topAuthors: [(name: String, commits: Int)]) -> String {
-        let items = topAuthors.map { "{\"name\":\(escapeJSON($0.name)),\"commits\":\($0.commits)}" }
+    private static func topAuthorsToJSON(topAuthors: [(name: String, email: String, commits: Int)]) -> String {
+        let items = topAuthors.map { "{\"name\":\(escapeJSON($0.name)),\"email\":\(escapeJSON($0.email)),\"commits\":\($0.commits)}" }
         return "[\(items.joined(separator: ","))]"
     }
 

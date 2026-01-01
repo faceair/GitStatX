@@ -12,6 +12,8 @@ final class Project {
     var expanded: Bool
     var isGeneratingStats: Bool
     var isRenaming: Bool
+    var progressStage: String?
+    var progressDetail: String?
     var lastGeneratedCommit: String?
     var createdAt: Date
     var updatedAt: Date
@@ -31,6 +33,8 @@ final class Project {
         self.expanded = expanded
         self.isGeneratingStats = false
         self.isRenaming = false
+        self.progressStage = nil
+        self.progressDetail = nil
         self.lastGeneratedCommit = nil
         self.createdAt = Date()
         self.updatedAt = Date()

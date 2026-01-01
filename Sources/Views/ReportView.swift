@@ -8,13 +8,15 @@ struct ReportView: View {
     @State private var isGeneratingStats = false
     @State private var statsPath: String?
     @State private var error: String?
+    @State private var progressStage: String?
+    @State private var progressDetail: String?
     
     var body: some View {
         ZStack {
             if let path = statsPath {
                 WebReportView(statsPath: path)
             } else if isGeneratingStats {
-                GeneratingStatsView()
+                GeneratingStatsView(stage: progressStage, detail: progressDetail)
             } else if let err = error {
                 ErrorView(error: err) {
                     Task {
@@ -31,6 +33,8 @@ struct ReportView: View {
         }
         .onAppear {
             isGeneratingStats = project.isGeneratingStats
+            progressStage = project.progressStage
+            progressDetail = project.progressDetail
             loadCachedReportIfAvailable()
             Task { await ensureFreshReport() }
         }
@@ -39,6 +43,12 @@ struct ReportView: View {
             if !generating {
                 refreshReportView()
             }
+        }
+        .onChange(of: project.progressStage) { _, stage in
+            progressStage = stage
+        }
+        .onChange(of: project.progressDetail) { _, detail in
+            progressDetail = detail
         }
         .onChange(of: project.lastGeneratedCommit) { _, _ in
             refreshReportView()
@@ -155,15 +165,24 @@ struct WebReportView: NSViewRepresentable {
 }
 
 struct GeneratingStatsView: View {
+    let stage: String?
+    let detail: String?
+
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 16) {
             ProgressView()
                 .scaleEffect(1.5)
-            Text("Generating statistics...")
+            Text(stage ?? "Generating statistics...")
                 .font(.headline)
-            Text("This may take a while for large repositories")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            if let detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("This may take a while for large repositories")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

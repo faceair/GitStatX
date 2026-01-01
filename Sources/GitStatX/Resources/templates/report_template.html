@@ -504,6 +504,18 @@
         color: var(--text);
       }
 
+      .chart-badge {
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(37, 99, 235, 0.08);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+
       .theme-toggle {
         display: none;
       }
@@ -630,7 +642,10 @@
             <div class="chart-container"><canvas id="monthOfYearChart"></canvas></div>
           </div>
           <div class="card">
-            <h3>Hour of Day</h3>
+            <div class="card-header">
+              <h3>Hour of Day</h3>
+              <span class="chart-badge">{{HOUR_TIMEZONE_LABEL}}</span>
+            </div>
             <div class="chart-container"><canvas id="hourlyChart"></canvas></div>
           </div>
           <div class="card">
@@ -914,6 +929,7 @@
           extensions: {{EXTENSION_JSON}},
           authorOfMonth: {{AUTHOR_OF_MONTH_JSON}},
           authorOfYear: {{AUTHOR_OF_YEAR_JSON}},
+          hourTimezoneLabel: {{HOUR_TIMEZONE_LABEL_JSON}},
           topAuthors: {{TOP_AUTHORS_JSON}},
           tags: {{TAGS_JSON}}
       };
@@ -996,6 +1012,15 @@
           });
 
           const hourLabels = Array.from({length: 24}, (_, i) => `${i}:00`);
+          const hourlyOptions = baseBarOptions();
+          hourlyOptions.plugins = hourlyOptions.plugins || {};
+          hourlyOptions.plugins.subtitle = {
+              display: !!data.hourTimezoneLabel,
+              text: data.hourTimezoneLabel,
+              color: '#475569',
+              font: { size: 12, weight: '600' },
+              padding: { top: 0, bottom: 6 }
+          };
           new Chart(document.getElementById('hourlyChart'), {
               type: 'bar',
               data: {
@@ -1006,7 +1031,7 @@
                       backgroundColor: chartColors.primary
                   }]
               },
-              options: baseBarOptions()
+              options: hourlyOptions
           });
 
           new Chart(document.getElementById('dailyChart'), {
@@ -1057,13 +1082,14 @@
               });
           }
 
+          const topAuthorsData = data.topAuthors || [];
           new Chart(document.getElementById('topAuthorsChart'), {
               type: 'horizontalBar' in Chart.defaults ? 'horizontalBar' : 'bar',
               data: {
-                  labels: data.topAuthors.map(a => a.name),
+                  labels: topAuthorsData.map(a => a.name),
                   datasets: [{
                       label: 'Commits',
-                      data: data.topAuthors.map(a => a.commits),
+                      data: topAuthorsData.map(a => a.commits),
                       backgroundColor: chartColors.secondary
                   }]
               },
@@ -1071,7 +1097,19 @@
                   indexAxis: 'y',
                   responsive: true,
                   maintainAspectRatio: false,
-                  plugins: { legend: { display: false } },
+                  plugins: {
+                      legend: { display: false },
+                      tooltip: {
+                          callbacks: {
+                              label: ctx => {
+                                  const commits = ctx.parsed?.x ?? ctx.parsed ?? ctx.raw ?? 0;
+                                  const author = topAuthorsData[ctx.dataIndex] || {};
+                                  const email = author.email ? ` – ${author.email}` : '';
+                                  return `Commits: ${commits}${email}`;
+                              }
+                          }
+                      }
+                  },
                   scales: {
                       x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
                       y: { grid: { display: false } }
