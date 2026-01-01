@@ -9,7 +9,6 @@ class GitStatsEngine {
     private typealias AuthorAgg = (name: String, email: String, commits: Int, added: Int, removed: Int, firstDate: Date?, lastDate: Date?)
     private typealias FileAgg = (commits: Int, added: Int, removed: Int)
 
-    private var statsCache: StatsCache?
     private var generatedCommitHash: String?
     private var cacheURL: URL {
         URL(fileURLWithPath: project.statsPath).appendingPathComponent("stats_cache.json")
@@ -46,27 +45,15 @@ class GitStatsEngine {
                 project.progressStage = nil
                 project.progressDetail = nil
                 project.lastGeneratedCommit = commitToRecord
+                NotificationCenter.default.post(name: .gitStatsGenerationCompleted, object: project.identifier)
                 try? self.context.save()
             }
         }
 
-        statsCache = forceFullRebuild ? nil : loadStatsCache()
-        if let cache = statsCache, cache.hasLineBreakdown == false {
-            statsCache = nil
-        }
-        let lastCachedCommit = statsCache?.lastCommit ?? project.lastGeneratedCommit
-        // 判断是否需要增量处理
-        let isIncremental = !forceFullRebuild &&
-                           lastCachedCommit != nil &&
-                           project.statsExists &&
-                           statsCache != nil
-
-        let sinceCommit: String? = isIncremental ? lastCachedCommit : nil
-
-        setProgress(stage: "Fetching commits", detail: isIncremental ? "Incremental from \(sinceCommit!)" : nil)
+        setProgress(stage: "Fetching commits", detail: nil)
 
         var lastProgressCommit = 0
-        let parsedCommits = repository.getCommitsWithNumstat(since: sinceCommit) { processed, total in
+        let parsedCommits = repository.getCommitsWithNumstat { processed, total in
             if processed != 1 && processed - lastProgressCommit < 500 {
                 if let total = total, processed == total {
                     // final progress update
@@ -83,13 +70,7 @@ class GitStatsEngine {
             }
         }
 
-        generatedCommitHash = parsedCommits.last?.commit.hash ?? lastCachedCommit ?? repository.currentCommitHash
-
-        // 如果是增量处理且没有新提交，直接返回
-        if isIncremental && parsedCommits.isEmpty {
-            setProgress(stage: "Fetching commits", detail: "No new commits since last generation")
-            return project.statsPath
-        }
+        generatedCommitHash = parsedCommits.last?.commit.hash ?? repository.currentCommitHash
 
         var authorStats: [String: AuthorAgg] = [:]
         var fileStats: [String: FileAgg] = [:]
@@ -104,24 +85,6 @@ class GitStatsEngine {
         var linesRemovedByYear: [String: Int] = [:]
         var linesAddedByYearMonth: [String: Int] = [:]
         var linesRemovedByYearMonth: [String: Int] = [:]
-
-        if let cache = statsCache {
-            totalCommits = cache.totalCommits
-            totalLinesAdded = cache.totalLinesAdded
-            totalLinesRemoved = cache.totalLinesRemoved
-            currentLoc = cache.currentLoc
-            fileSet = Set(cache.fileSet)
-            filesByDate = cache.filesByDate
-            locByDate = cache.locByDate
-            linesAddedByYear = cache.linesAddedByYear
-            linesRemovedByYear = cache.linesRemovedByYear
-            linesAddedByYearMonth = cache.linesAddedByYearMonth
-            linesRemovedByYearMonth = cache.linesRemovedByYearMonth
-            authorStats = cache.authorStats.mapValues {
-                (name: $0.name, email: $0.email, commits: $0.commits, added: $0.added, removed: $0.removed, firstDate: $0.firstDate, lastDate: $0.lastDate)
-            }
-            fileStats = cache.fileStats.mapValues { (commits: $0.commits, added: $0.added, removed: $0.removed) }
-        }
         setProgress(stage: "Aggregating results", detail: nil)
         Self.aggregateCommits(
             parsedCommits: parsedCommits,
@@ -483,18 +446,6 @@ class GitStatsEngine {
         return statsPath
     }
 
-    private func loadStatsCache() -> StatsCache? {
-        guard FileManager.default.fileExists(atPath: cacheURL.path) else { return nil }
-        do {
-            let data = try Data(contentsOf: cacheURL)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode(StatsCache.self, from: data)
-        } catch {
-            return nil
-        }
-    }
-
     private func saveStatsCache(_ cache: StatsCache) {
         do {
             try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -506,4 +457,8 @@ class GitStatsEngine {
         }
     }
 
+}
+
+extension Notification.Name {
+    static let gitStatsGenerationCompleted = Notification.Name("GitStatsGenerationCompleted")
 }

@@ -40,9 +40,6 @@ struct ReportView: View {
         }
         .onChange(of: project.isGeneratingStats) { _, generating in
             isGeneratingStats = generating
-            if !generating {
-                refreshReportView()
-            }
         }
         .onChange(of: project.progressStage) { _, stage in
             progressStage = stage
@@ -50,7 +47,8 @@ struct ReportView: View {
         .onChange(of: project.progressDetail) { _, detail in
             progressDetail = detail
         }
-        .onChange(of: project.lastGeneratedCommit) { _, _ in
+        .onReceive(NotificationCenter.default.publisher(for: .gitStatsGenerationCompleted)) { notification in
+            guard let identifier = notification.object as? String, identifier == project.identifier else { return }
             refreshReportView()
         }
     }

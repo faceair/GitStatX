@@ -200,16 +200,11 @@ class GitRepository {
     }
 
     func getCommitsWithNumstat(
-        since: String? = nil,
         progress: ((Int, Int?) -> Void)? = nil
     ) -> [ParsedCommitNumstat] {
         var countTotal: Int?
         if progress != nil {
-            var countArgs: [String] = ["rev-list", "--count", "--all"]
-            if let since = since {
-                countArgs.insert("\(since)..HEAD", at: 1)
-            }
-            let countResult = runGit(countArgs)
+            let countResult = runGit(["rev-list", "--count", "--all"])
             if countResult.status == 0 {
                 let rawCount = String(decoding: countResult.data, as: UTF8.self)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -217,7 +212,7 @@ class GitRepository {
             }
         }
 
-        var arguments = [
+        let arguments = [
             "-c", "log.showSignature=false",
             "log",
             "--all",
@@ -229,10 +224,6 @@ class GitRepository {
             "--numstat",
             "--format=%H%x01%T%x01%P%x01%an%x01%ae%x01%at%x01%aI%x01%cn%x01%ce%x01%ct%x01%cI%x01%s%x02"
         ]
-
-        if let since = since {
-            arguments.insert("\(since)..HEAD", at: 3)
-        }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")

@@ -6,7 +6,6 @@ GitStatX is a macOS app built with SwiftUI for generating offline, visual Git st
 
 ## Features
 - Manage multiple repositories or folders in a sidebar
-- Incremental stats with cache (`stats_cache.json`) to skip unchanged commits
 - Progress tracking for scanning and processing stages
 - Offline HTML report with bundled template and Chart.js assets
 - SwiftData persistence for authors, commits, and files
