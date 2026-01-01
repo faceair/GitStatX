@@ -22,10 +22,11 @@ class GitStatsEngine {
 
     func generateStats(forceFullRebuild: Bool = false) async throws -> String {
         let generatedAt = Date()
+        let headAtStart = repository.currentCommitHash
 
         if !forceFullRebuild,
            let last = project.lastGeneratedCommit,
-           let head = repository.currentCommitHash,
+           let head = headAtStart,
            last == head,
            project.statsExists {
             return project.statsPath
@@ -39,7 +40,7 @@ class GitStatsEngine {
         }
 
         defer {
-            let commitToRecord = generatedCommitHash ?? repository.currentCommitHash
+            let commitToRecord = headAtStart ?? generatedCommitHash ?? repository.currentCommitHash
             Task { @MainActor in
                 project.isGeneratingStats = false
                 project.progressStage = nil
@@ -70,7 +71,7 @@ class GitStatsEngine {
             }
         }
 
-        generatedCommitHash = parsedCommits.last?.commit.hash ?? repository.currentCommitHash
+        generatedCommitHash = parsedCommits.last?.commit.hash ?? headAtStart ?? repository.currentCommitHash
 
         var authorStats: [String: AuthorAgg] = [:]
         var fileStats: [String: FileAgg] = [:]
@@ -140,8 +141,9 @@ class GitStatsEngine {
             hourTimezoneLabel: hourTimezoneLabel
         )
 
+        let cacheCommit = headAtStart ?? generatedCommitHash ?? repository.currentCommitHash
         let cacheToSave = StatsCache(
-            lastCommit: generatedCommitHash ?? repository.currentCommitHash,
+            lastCommit: cacheCommit,
             totalCommits: totalCommits,
             totalLinesAdded: totalLinesAdded,
             totalLinesRemoved: totalLinesRemoved,
