@@ -34,13 +34,13 @@ struct ReportView: View {
             loadCachedReportIfAvailable()
             Task { await ensureFreshReport() }
         }
-        .onChange(of: project.isGeneratingStats) { generating in
+        .onChange(of: project.isGeneratingStats) { _, generating in
             isGeneratingStats = generating
             if !generating {
                 refreshReportView()
             }
         }
-        .onChange(of: project.lastGeneratedCommit) { _ in
+        .onChange(of: project.lastGeneratedCommit) { _, _ in
             refreshReportView()
         }
     }

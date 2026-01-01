@@ -18,6 +18,11 @@ let package = Package(
         .executableTarget(
             name: "GitStatX",
             path: "Sources",
+            exclude: [
+                "GitStatX/Resources/AppIcon.iconset",
+                "GitStatX/Resources/AppIcon.icns",
+                "GitStatX/Resources/AppIcon.svg"
+            ],
             resources: [
                 .copy("GitStatX/Resources/templates"),
                 .copy("GitStatX/Resources/Chart.js")
