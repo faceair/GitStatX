@@ -319,7 +319,7 @@ class GitStatsEngine {
         var extStats: [String: (files: Int, lines: Int)] = [:]
         for (path, stats) in fileStats {
             let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
-            let key = ext.isEmpty ? "no-extension" : ext
+            let key = ext.isEmpty ? "unknown" : ext
             var entry = extStats[key] ?? (0, 0)
             entry.files += 1
             let net = stats.added - stats.removed

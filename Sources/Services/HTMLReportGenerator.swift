@@ -567,10 +567,9 @@ class HTMLReportGenerator {
             let filePercent = totalFiles > 0 ? (Double(stats.files) / Double(totalFiles) * 100) : 0
             let linePercent = totalLines > 0 ? (Double(stats.lines) / Double(totalLines) * 100) : 0
             let linesPerFile = stats.files > 0 ? Double(stats.lines) / Double(stats.files) : 0
-            let label = ext == "no-extension" ? "No Extension" : ext
             return """
             <tr>
-                <td>\(escapeHTML(label))</td>
+                <td>\(escapeHTML(ext))</td>
                 <td>\(stats.files.formatted())</td>
                 <td>\(String(format: "%.2f", filePercent))%</td>
                 <td>\(stats.lines.formatted())</td>
